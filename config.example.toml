@@ -58,3 +58,13 @@ max_stall = 300
 # Example: 2160 keeps 4K and below. If a video stalls while loading, vrec retries it once
 # at the next lower quality anyway, whatever this value.
 max_height = 0
+
+[display]
+# Screen the recording Chrome window is moved to (feature auto_place_window).
+# "auto" = the largest screen that isn't your main one; or a number ("2") or a name ("DISPLAY3").
+screen = "auto"
+
+[audio]
+# Audio output that receives the recorded video's sound (feature audio_sink).
+# Any part of the device name works; VB-CABLE's playback side is called "CABLE Input".
+output = "CABLE Input"

@@ -28,6 +28,8 @@ class Settings:
     resume_at_s: float = 10
     max_stall_s: float = 300
     max_height: int = 0
+    display_screen: str = "auto"
+    audio_output: str = "CABLE Input"
     max_wall_factor: float = 3
     max_wall_extra_s: float = 600
 
@@ -94,6 +96,12 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
     },
     "quality": {
         "max_height": ("max_height", int),
+    },
+    "display": {
+        "screen": ("display_screen", str),
+    },
+    "audio": {
+        "output": ("audio_output", str),
     },
 }
 

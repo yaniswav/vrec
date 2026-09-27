@@ -12,7 +12,7 @@ import obsws_python as obs
 from playwright.sync_api import Page
 
 from vrec import history
-from vrec.browser import document_script, load_js
+from vrec.browser import document_script, load_js, route_audio_to
 from vrec.config import Settings
 from vrec.console import ProgressLine, human_duration, warn
 from vrec.features import FeatureSet
@@ -122,6 +122,16 @@ def record_one(
     result.fullscreen = page.evaluate(load_js("fill_window.js"))
     if not result.fullscreen:
         warn("The video doesn't fill the whole screen, recording continues anyway")
+
+    if features.enabled("audio_sink"):
+        routed, detail = route_audio_to(page, settings.audio_output)
+        if routed:
+            print(f"   Audio: this video only -> {detail}")
+        else:
+            warn(
+                f"Couldn't send the video's sound to {settings.audio_output} ({detail}): "
+                "using the Windows audio setup."
+            )
 
     forced = page.evaluate(_JS_GET_FORCED_QUALITY) if force_quality else None
     if not force_quality:
