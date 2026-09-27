@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `auto_start_obs` feature (on by default): starts OBS itself if it isn't already open when a
+  recording, `--test`, or scheduled run begins, using `[obs] path` if set, else the registry, else the
+  default install location, and leaves it open afterwards. Never starts a second copy: if OBS is
+  already running but its WebSocket server doesn't answer, vrec reports that instead. New `[obs] path`
+  and `[obs] start_timeout` config keys.
+- `auto_start_chrome` feature (on by default): starts the recording Chrome itself if its debug port
+  doesn't answer, using `[chrome] path` if set, else the standard install locations, else the registry,
+  on the same profile `launch_chrome.bat` uses (`[chrome] profile`, else `VREC_CHROME_PROFILE`, else
+  `%LocalAppData%\vrec\chrome-profile`), and leaves it open afterwards. New `[chrome] path`,
+  `[chrome] profile`, and `[chrome] start_timeout` config keys.
+- `vrec --doctor` reports in advance what these two features would do (`[INFO] ... Not open: vrec will
+  start it (...)`) instead of starting anything itself; it stays fully read-only.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

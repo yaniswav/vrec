@@ -56,6 +56,11 @@ be muted too. To get its sound back, go to the volume mixer and set that Chrome 
 
 ## 4. OBS
 
+By default, vrec starts OBS itself if it isn't already open when you run it (feature
+`auto_start_obs`), and leaves it open afterwards. It looks for `obs64.exe` in the Windows registry,
+then in its default install location; set `[obs] path` in `config.toml` if it can't find it (see
+[config.example.toml](../config.example.toml)). You can still open OBS yourself first if you prefer.
+
 1. **Tools > WebSocket Server Settings**, check **Enable WebSocket server**.
 2. In your scene, add a **Display Capture** source pointed at the virtual display, with
    **Capture Cursor** unchecked.
@@ -82,9 +87,14 @@ a headset.
 
 ## 5. Chrome
 
+By default, vrec starts the recording Chrome itself if its debug port doesn't answer (feature
+`auto_start_chrome`), on the same dedicated profile `launch_chrome.bat` uses, and leaves it open
+afterwards. You still need `launch_chrome.bat` once, the first time, to log in to any site you need
+to in that profile:
+
 1. Double-click `scripts\windows\launch_chrome.bat`. It opens a separate Chrome window on a dedicated
    profile (so it doesn't interfere with your everyday browsing).
-2. The first time, log in to any site you need to, in that window.
+2. Log in to any site you need to, in that window.
 3. By default, vrec moves this window to the virtual display and maximizes it there itself, before
    each run, and puts it back afterwards (feature `auto_place_window`). If you turn that feature off,
    or it doesn't work for you, do it by hand instead: click the window, press **Win + Shift + Right

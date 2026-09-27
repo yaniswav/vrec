@@ -17,7 +17,12 @@ class Settings:
     obs_host: str = "localhost"
     obs_port: int = 4455
     audio_source_name: str = "Chrome Audio (VB-CABLE)"
+    obs_path: str = ""
+    obs_start_timeout_s: float = 60
     chrome_port: int = 9222
+    chrome_path: str = ""
+    chrome_profile: str = ""
+    chrome_start_timeout_s: float = 30
     lead_in_s: float = 2
     tail_s: float = 2
     fullscreen_settle_s: float = 2
@@ -73,9 +78,14 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
         "host": ("obs_host", str),
         "port": ("obs_port", int),
         "audio_source_name": ("audio_source_name", str),
+        "path": ("obs_path", str),
+        "start_timeout": ("obs_start_timeout_s", float),
     },
     "chrome": {
         "debug_port": ("chrome_port", int),
+        "path": ("chrome_path", str),
+        "profile": ("chrome_profile", str),
+        "start_timeout": ("chrome_start_timeout_s", float),
     },
     "recording": {
         "lead_in": ("lead_in_s", float),

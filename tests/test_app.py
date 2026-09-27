@@ -100,6 +100,46 @@ def make_result(**kwargs: object) -> RecordingResult:
     return RecordingResult(**defaults)  # type: ignore[arg-type]
 
 
+# ---------- _connect_obs (lot N: starts OBS itself via vrec.launcher) ----------
+
+
+def test_connect_obs_uses_launcher_ensure_obs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    settings = Settings()
+    features = FeatureSet()
+    client = FakeClient()
+    calls: list[tuple[object, object, object]] = []
+
+    def fake_ensure_obs(s: object, p: object, f: object) -> tuple[FakeClient, str]:
+        calls.append((s, p, f))
+        return client, "pw"
+
+    monkeypatch.setattr(app.launcher, "ensure_obs", fake_ensure_obs)
+
+    result_client, password = app._connect_obs(paths, settings, features, [], {})
+
+    assert result_client is client
+    assert password == "pw"
+    assert calls == [(settings, paths, features)]
+
+
+# ---------- _start_chrome_if_needed (lot O: starts Chrome itself via vrec.launcher) ----------
+
+
+def test_start_chrome_if_needed_uses_launcher_ensure_chrome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    batch = make_batch(tmp_path)
+    calls: list[tuple[object, object]] = []
+    monkeypatch.setattr(
+        app.launcher, "ensure_chrome", lambda settings, features: calls.append((settings, features))
+    )
+
+    app._start_chrome_if_needed(batch)
+
+    assert calls == [(batch.settings, batch.features)]
+
+
 # ---------- _record_batch ----------
 
 

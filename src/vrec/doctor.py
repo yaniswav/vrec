@@ -16,7 +16,7 @@ from pathlib import Path
 
 import obsws_python as obs
 
-from vrec import display, obs_control
+from vrec import display, launcher, obs_control
 from vrec.config import Paths, Settings, load_settings
 from vrec.console import first_line
 from vrec.errors import VrecError
@@ -48,6 +48,7 @@ class _Context:
     features: FeatureSet
     _client: obs.ReqClient | None = field(default=None, init=False, repr=False)
     _client_error: str | None = field(default=None, init=False, repr=False)
+    _client_unreachable: bool = field(default=False, init=False, repr=False)
     _tried: bool = field(default=False, init=False, repr=False)
 
     def client(self) -> obs.ReqClient | None:
@@ -56,6 +57,9 @@ class _Context:
             self._tried = True
             try:
                 self._client, _password = obs_control.connect(self.settings, self.paths)
+            except obs_control.ObsUnreachable as e:
+                self._client_error = str(e)
+                self._client_unreachable = True
             except VrecError as e:
                 self._client_error = str(e)
         return self._client
@@ -115,14 +119,36 @@ def check_features(ctx: _Context) -> Check:
 def check_obs_connection(ctx: _Context) -> Check:
     """OBS connection."""
     client = ctx.client()
-    if client is None:
+    if client is not None:
+        return Check("ok", "OBS connection", detail="Connected, password OK.")
+    if ctx._client_unreachable and ctx.features.enabled("auto_start_obs"):
+        return _obs_not_open_check(ctx)
+    return Check(
+        "fail",
+        "OBS connection",
+        detail=ctx._client_error or "Can't reach OBS.",
+        hint="Open OBS and enable the WebSocket server (Tools > WebSocket Server Settings).",
+    )
+
+
+def _obs_not_open_check(ctx: _Context) -> Check:
+    """OBS isn't reachable and auto_start_obs is on: report what vrec would do, without doing it."""
+    if launcher.obs_running():
         return Check(
             "fail",
             "OBS connection",
-            detail=ctx._client_error or "Can't reach OBS.",
-            hint="Open OBS and enable the WebSocket server (Tools > WebSocket Server Settings).",
+            detail="OBS is open but its WebSocket server doesn't answer.",
+            hint="In OBS: Tools > WebSocket Server Settings > Enable WebSocket server.",
         )
-    return Check("ok", "OBS connection", detail="Connected, password OK.")
+    exe = launcher.find_obs(ctx.settings)
+    if exe is None:
+        return Check(
+            "fail",
+            "OBS connection",
+            detail="OBS isn't open and wasn't found.",
+            hint="Open it yourself, or set [obs] path in config.toml.",
+        )
+    return Check("info", "OBS connection", detail=f"Not open: vrec will start it ({exe}).")
 
 
 def check_obs_version(ctx: _Context) -> Check:
@@ -271,10 +297,28 @@ def check_chrome_debug_port(ctx: _Context) -> Check:
         with urllib.request.urlopen(url, timeout=3) as response:  # noqa: S310 - local debug port only
             data = json.loads(response.read().decode("utf-8"))
     except Exception:
+        return _chrome_not_open_check(ctx, url)
+    return Check("ok", "Chrome debugging port", detail=data.get("Browser", "reachable"))
+
+
+def _chrome_not_open_check(ctx: _Context, url: str) -> Check:
+    """Chrome's debug port doesn't answer: report what vrec would do (if auto_start_chrome is on)."""
+    if not ctx.features.enabled("auto_start_chrome"):
         return Check(
             "fail", "Chrome debugging port", detail=f"Can't reach {url}", hint="run launch_chrome.bat"
         )
-    return Check("ok", "Chrome debugging port", detail=data.get("Browser", "reachable"))
+    exe = launcher.find_chrome(ctx.settings)
+    if exe is None:
+        return Check(
+            "fail",
+            "Chrome debugging port",
+            detail=f"Can't reach {url}",
+            hint="Install Chrome, or set [chrome] path in config.toml.",
+        )
+    profile = launcher.chrome_profile_dir(ctx.settings)
+    return Check(
+        "info", "Chrome debugging port", detail=f"Not open: vrec will start it ({exe}, profile {profile})."
+    )
 
 
 def check_virtual_screen(ctx: _Context) -> Check:

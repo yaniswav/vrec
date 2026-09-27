@@ -205,6 +205,59 @@ def test_check_obs_connection_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert "WebSocket" in check.hint
 
 
+def _unreachable_ctx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> doctor._Context:
+    """A context whose OBS connection fails with obs_control.ObsUnreachable specifically."""
+
+    def fail_connect(settings: Settings, paths: Paths) -> tuple[FakeClient, str]:
+        raise obs_control.ObsUnreachable("Can't reach OBS: open OBS and enable the WebSocket server.")
+
+    monkeypatch.setattr(obs_control, "connect", fail_connect)
+    return doctor._Context(settings=Settings(), paths=_paths(tmp_path), features=FeatureSet())
+
+
+def test_check_obs_connection_not_open_and_found_is_info(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _unreachable_ctx(tmp_path, monkeypatch)
+    monkeypatch.setattr(doctor.launcher, "obs_running", lambda: False)
+    monkeypatch.setattr(doctor.launcher, "find_obs", lambda settings: Path(r"C:\obs\obs64.exe"))
+    check = doctor.check_obs_connection(ctx)
+    assert check.status == "info"
+    assert "vrec will start it" in check.detail
+    assert "obs64.exe" in check.detail
+
+
+def test_check_obs_connection_open_but_not_answering_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _unreachable_ctx(tmp_path, monkeypatch)
+    monkeypatch.setattr(doctor.launcher, "obs_running", lambda: True)
+    monkeypatch.setattr(doctor.launcher, "find_obs", lambda settings: pytest.fail("should not look it up"))
+    check = doctor.check_obs_connection(ctx)
+    assert check.status == "fail"
+    assert "doesn't answer" in check.detail
+
+
+def test_check_obs_connection_not_found_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = _unreachable_ctx(tmp_path, monkeypatch)
+    monkeypatch.setattr(doctor.launcher, "obs_running", lambda: False)
+    monkeypatch.setattr(doctor.launcher, "find_obs", lambda settings: None)
+    check = doctor.check_obs_connection(ctx)
+    assert check.status == "fail"
+    assert "wasn't found" in check.detail
+
+
+def test_check_obs_connection_unreachable_feature_off_uses_generic_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _unreachable_ctx(tmp_path, monkeypatch)
+    ctx.features.set("auto_start_obs", False)
+    monkeypatch.setattr(doctor.launcher, "obs_running", lambda: pytest.fail("should not check"))
+    check = doctor.check_obs_connection(ctx)
+    assert check.status == "fail"
+    assert "WebSocket" in check.hint
+
+
 def test_check_obs_version_ok(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = _ctx(tmp_path, FakeClient(obs_version="30.1.2", ws_version="5.3.0"), monkeypatch)
     check = doctor.check_obs_version(ctx)
@@ -418,7 +471,25 @@ def test_check_chrome_debug_port_ok(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert check.detail == "Chrome/120.0"
 
 
-def test_check_chrome_debug_port_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_chrome_debug_port_fails_when_feature_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import urllib.request
+
+    def boom(url, timeout=3):
+        raise OSError("connection refused")
+
+    ctx = _ctx(tmp_path, None, monkeypatch)
+    ctx.features.set("auto_start_chrome", False)
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    check = doctor.check_chrome_debug_port(ctx)
+    assert check.status == "fail"
+    assert check.hint == "run launch_chrome.bat"
+
+
+def test_check_chrome_debug_port_closed_and_found_is_info(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import urllib.request
 
     def boom(url, timeout=3):
@@ -426,9 +497,29 @@ def test_check_chrome_debug_port_fails(tmp_path: Path, monkeypatch: pytest.Monke
 
     ctx = _ctx(tmp_path, None, monkeypatch)
     monkeypatch.setattr(urllib.request, "urlopen", boom)
+    monkeypatch.setattr(doctor.launcher, "find_chrome", lambda settings: Path(r"C:\chrome\chrome.exe"))
+    monkeypatch.setattr(doctor.launcher, "chrome_profile_dir", lambda settings: Path(r"C:\profile"))
+    check = doctor.check_chrome_debug_port(ctx)
+    assert check.status == "info"
+    assert "vrec will start it" in check.detail
+    assert "chrome.exe" in check.detail
+    assert "profile" in check.detail
+
+
+def test_check_chrome_debug_port_closed_and_not_found_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import urllib.request
+
+    def boom(url, timeout=3):
+        raise OSError("connection refused")
+
+    ctx = _ctx(tmp_path, None, monkeypatch)
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    monkeypatch.setattr(doctor.launcher, "find_chrome", lambda settings: None)
     check = doctor.check_chrome_debug_port(ctx)
     assert check.status == "fail"
-    assert check.hint == "run launch_chrome.bat"
+    assert "Install Chrome" in check.hint
 
 
 # ---------------------------------------------------------------------------
@@ -468,6 +559,7 @@ def test_run_doctor_returns_one_when_a_check_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(obs_control, "connect", lambda settings, paths: (_passing_client(tmp_path), "pw"))
+    monkeypatch.setattr(doctor.launcher, "find_chrome", lambda settings: None)  # no real filesystem/registry
     paths = _paths(tmp_path)
     # videos.txt is left missing on purpose: the data-dir check must fail.
 
@@ -489,6 +581,7 @@ def test_run_doctor_reports_unexpected_exception_as_a_failed_check(
         "connect",
         lambda settings, paths: (ExplodingClient(record_directory=str(tmp_path)), "pw"),
     )
+    monkeypatch.setattr(doctor.launcher, "find_chrome", lambda settings: None)  # no real filesystem/registry
     paths = _paths(tmp_path)
     paths.videos.write_text("https://example.com/a\n", encoding="utf-8")
 

@@ -14,10 +14,24 @@ port = 4455
 # vrec creates it automatically on the VB-CABLE "CABLE Output" device if it
 # doesn't already exist.
 audio_source_name = "Chrome Audio (VB-CABLE)"
+# Path to obs64.exe, if vrec can't find it itself (feature auto_start_obs). Leave empty to let vrec
+# look in the registry, then in the default install location.
+path = ""
+# Seconds to wait for OBS's WebSocket server to answer after starting it (feature auto_start_obs).
+start_timeout = 60
 
 [chrome]
 # Remote debugging port Chrome was started with (see scripts/windows/launch_chrome.bat).
 debug_port = 9222
+# Path to chrome.exe, if vrec can't find it itself (feature auto_start_chrome). Leave empty to let
+# vrec look in the standard install locations, then in the registry.
+path = ""
+# Chrome profile directory used when vrec starts the recording Chrome itself (feature
+# auto_start_chrome). Leave empty to use VREC_CHROME_PROFILE, then
+# %LocalAppData%\vrec\chrome-profile -- the same profile launch_chrome.bat uses.
+profile = ""
+# Seconds to wait for Chrome's debugging port to answer after starting it (feature auto_start_chrome).
+start_timeout = 30
 
 [recording]
 # Seconds recorded before playback starts, in case it starts a little early.

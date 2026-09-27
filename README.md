@@ -22,12 +22,16 @@ Unattended OBS recording of web videos, one after another.
 
 ## How it works
 
-- **Chrome** is driven over the DevTools protocol (CDP) on a dedicated profile. By default vrec moves
-  its window onto the virtual display itself before each batch and puts it back afterwards (feature
-  `auto_place_window`); moving it there by hand (**Win + Shift + Right Arrow**) is a fallback for when
-  that's off or doesn't work for you.
+- **Chrome** is driven over the DevTools protocol (CDP) on a dedicated profile. By default vrec starts
+  the recording Chrome itself if its debug port doesn't answer (feature `auto_start_chrome`, using
+  `[chrome] path`/`profile` if you set them, or the standard install location and profile otherwise)
+  and moves its window onto the virtual display before each batch, then puts it back afterwards
+  (feature `auto_place_window`); starting it yourself with `launch_chrome.bat`, or moving it by hand
+  (**Win + Shift + Right Arrow**), are fallbacks for when those features are off or don't work for you.
 - **OBS** is controlled through its WebSocket API: starting/stopping recordings, checking the current
-  scene, and reading the audio meter.
+  scene, and reading the audio meter. By default vrec also starts OBS itself if it isn't already open
+  (feature `auto_start_obs`, using `[obs] path` if you set it, or the registry/default install location
+  otherwise) and leaves it open afterwards.
 - **Audio** is sent through **VB-CABLE**, a virtual audio cable, so OBS can capture the video's sound
   without playing it on your speakers. By default (feature `audio_sink`) vrec routes only the recorded
   page's own sound there itself, using a brief, automatically-revoked microphone permission to look up
@@ -64,14 +68,18 @@ Unattended OBS recording of web videos, one after another.
 
 1. Follow the one-time setup: [docs/setup-windows.md](docs/setup-windows.md).
 2. Run `scripts\windows\install.bat` to install vrec and its dependencies.
-3. Run `scripts\windows\launch_chrome.bat` to open the dedicated recording Chrome window. vrec moves
-   it to the virtual display for you before each run (feature `auto_place_window`); move it there
-   yourself with **Win + Shift + Right Arrow** only as a fallback, if you turn that off.
-4. Put your links in `data\videos.txt` (see [videos.example.txt](videos.example.txt) for the format).
-5. Run `vrec --doctor` to check that OBS, Chrome, VB-CABLE and disk space are all ready. Fix anything
+3. Put your links in `data\videos.txt` (see [videos.example.txt](videos.example.txt) for the format).
+4. Run `vrec --doctor` to check that OBS, Chrome, VB-CABLE and disk space are all ready. Fix anything
    it reports as `[FAIL]` before continuing.
-6. Run `scripts\windows\test.bat` for a quick 30-second test and diagnostic.
-7. Run `scripts\windows\start.bat` to record your list.
+5. Run `scripts\windows\test.bat` for a quick 30-second test and diagnostic.
+6. Run `scripts\windows\start.bat` to record your list.
+
+You don't need to open OBS or the recording Chrome by hand first: by default vrec starts OBS itself
+if it isn't already open (feature `auto_start_obs`), moves it to the virtual display for you before
+each run (feature `auto_place_window`), and also starts the recording Chrome itself if its debug port
+doesn't answer (feature `auto_start_chrome`) — both are left open afterwards. Run
+`scripts\windows\launch_chrome.bat` yourself the first time (or whenever you need to), to log in to a
+site in that dedicated Chrome profile before recording.
 
 ## Usage
 
@@ -167,7 +175,12 @@ is optional; a missing file or key falls back to the default shown below.
 | `[obs]` | `host` | `localhost` | Hostname of the machine running OBS. |
 | `[obs]` | `port` | `4455` | obs-websocket server port. |
 | `[obs]` | `audio_source_name` | `Chrome Audio (VB-CABLE)` | Name of the OBS audio input source that carries Chrome's sound; created automatically if missing. |
+| `[obs]` | `path` | (empty) | Path to `obs64.exe`, if vrec can't find it itself (feature `auto_start_obs`). Empty = look in the registry, then the default install location. |
+| `[obs]` | `start_timeout` | `60` | Seconds to wait for OBS's WebSocket server to answer after starting it (feature `auto_start_obs`). |
 | `[chrome]` | `debug_port` | `9222` | Remote debugging port Chrome was started with (see `launch_chrome.bat`). |
+| `[chrome]` | `path` | (empty) | Path to `chrome.exe`, if vrec can't find it itself (feature `auto_start_chrome`). Empty = look in the standard install locations, then the registry. |
+| `[chrome]` | `profile` | (empty) | Chrome profile directory used when vrec starts the recording Chrome itself (feature `auto_start_chrome`). Empty = `VREC_CHROME_PROFILE`, then `%LocalAppData%\vrec\chrome-profile` (same as `launch_chrome.bat`). |
+| `[chrome]` | `start_timeout` | `30` | Seconds to wait for Chrome's debugging port to answer after starting it (feature `auto_start_chrome`). |
 | `[recording]` | `lead_in` | `2` | Seconds recorded before playback starts. |
 | `[recording]` | `tail` | `2` | Seconds recorded after the video ends. |
 | `[recording]` | `fullscreen_settle` | `2` | Seconds to wait after going fullscreen before rewinding the video. |
@@ -217,6 +230,8 @@ the single-instance lock (`data\vrec.lock`).
 | `auto_place_window` | ON | Move the recording Chrome window to the virtual display automatically |
 | `manage_virtual_display` | OFF | Turn the virtual display on before a batch and off after it |
 | `audio_sink` | ON | Send only the recorded video's sound to CABLE Input (no Windows mixer setup) |
+| `auto_start_obs` | ON | Start OBS if it isn't open (it stays open afterwards) |
+| `auto_start_chrome` | ON | Start the recording Chrome if it isn't open (it stays open afterwards) |
 
 ## Output files & statuses
 
@@ -255,6 +270,7 @@ src/vrec/            application source
   recorder.py          recording a single video: fullscreen, quality, OBS start/stop, live checks
   browser.py            Chrome connection (CDP), window placement, per-page audio routing
   obs_control.py        OBS WebSocket control: connect, audio setup, screenshots
+  launcher.py           starting OBS/Chrome themselves if they aren't already open
   display.py            screens and the virtual-display on/off helper
   doctor.py             `vrec --doctor` checks
   schedule.py           `vrec --schedule` (Windows Task Scheduler)

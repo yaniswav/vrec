@@ -32,8 +32,57 @@ taskbar shortcut. That script opens Chrome with the DevTools port vrec needs to 
 
 ### "Can't reach OBS: open OBS and enable the WebSocket server (Tools > WebSocket Server Settings)."
 
-OBS isn't running, or its WebSocket server isn't enabled. Open OBS, then **Tools > WebSocket Server
-Settings** and check **Enable WebSocket server**.
+With the `auto_start_obs` feature off, this is the only message you'll see when OBS isn't reachable:
+open OBS, then **Tools > WebSocket Server Settings** and check **Enable WebSocket server**. With
+`auto_start_obs` on (the default), vrec starts OBS itself instead — see below.
+
+## Starting OBS and Chrome automatically
+
+By default (features `auto_start_obs`/`auto_start_chrome`), vrec starts OBS and the recording Chrome
+itself if they aren't already open when a recording, `--test`, or scheduled run begins, and leaves
+them open afterwards. `vrec --doctor` never starts anything itself; instead, when one of them isn't
+reachable and its feature is on, it reports `[INFO] ... Not open: vrec will start it (...)` so you can
+see in advance what will happen.
+
+### "Starting OBS..." / "OBS started."
+
+Printed while vrec starts OBS itself (feature `auto_start_obs`) and once its WebSocket server answers.
+Not an error — informational only.
+
+### "OBS is open but its WebSocket server doesn't answer. In OBS: Tools > WebSocket Server Settings > Enable WebSocket server."
+
+OBS is already running (vrec checked with `tasklist`), so vrec won't start a second copy of it — OBS
+would just show "OBS is already running" instead of actually starting. Enable the WebSocket server as
+the message says, then run vrec again.
+
+### "OBS isn't open and wasn't found. Open it yourself, or set [obs] path in config.toml."
+
+OBS isn't running, and vrec couldn't locate `obs64.exe` (checked `[obs] path`, then the registry, then
+the default install location). Open OBS yourself, or set `[obs] path` in `config.toml` to its
+`obs64.exe`.
+
+### "OBS started, but its WebSocket server doesn't answer. In OBS: Tools > WebSocket Server Settings > Enable WebSocket server."
+
+vrec started OBS itself but its WebSocket server still didn't answer after `[obs] start_timeout`
+seconds (60 by default). Enable it as the message says (**Tools > WebSocket Server Settings > Enable
+WebSocket server**), then run vrec again.
+
+### "Starting the recording Chrome..." / "Recording Chrome started. If the site needs it, log in in that window."
+
+Printed while vrec starts the recording Chrome itself (feature `auto_start_chrome`) and once its debug
+port answers. Not an error — if you need to log in to a site the first time, do it in that window; it
+uses the same profile as `launch_chrome.bat`.
+
+### "Chrome wasn't found. Install it, or set [chrome] path in config.toml."
+
+vrec couldn't locate `chrome.exe` (checked `[chrome] path`, then the standard install locations, then
+the registry). Install Google Chrome, or set `[chrome] path` in `config.toml`.
+
+### "Chrome started, but its debugging port doesn't answer (port <n>)."
+
+vrec started the recording Chrome itself but its debug port still didn't answer after `[chrome]
+start_timeout` seconds (30 by default). Try `launch_chrome.bat` yourself and check `vrec --doctor`'s
+"Chrome debugging port" line.
 
 ### "OBS refused the connection: the password is probably wrong. Restart, it will be asked again."
 

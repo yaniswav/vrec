@@ -25,6 +25,10 @@ _AUDIO_SOURCE_KIND = "wasapi_input_capture"
 logging.getLogger("obsws_python").setLevel(logging.CRITICAL)
 
 
+class ObsUnreachable(VrecError):
+    """OBS's WebSocket server didn't answer at all (connection refused): OBS may not be open."""
+
+
 def get_password(paths: Paths) -> tuple[str, bool]:
     """Resolve the OBS WebSocket password: env var, then the password file, then a prompt.
 
@@ -47,7 +51,7 @@ def connect(settings: Settings, paths: Paths) -> tuple[obs.ReqClient, str]:
     try:
         client = obs.ReqClient(host=settings.obs_host, port=settings.obs_port, password=password, timeout=10)
     except ConnectionRefusedError as e:
-        raise VrecError(
+        raise ObsUnreachable(
             "Can't reach OBS: open OBS and enable the WebSocket server (Tools > WebSocket Server Settings)."
         ) from e
     except Exception as e:

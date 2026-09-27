@@ -39,6 +39,8 @@ REGISTRY: tuple[Feature, ...] = (
         default=False,
     ),
     Feature("audio_sink", "Send only the recorded video's sound to CABLE Input (no Windows mixer setup)"),
+    Feature("auto_start_obs", "Start OBS if it isn't open (it stays open afterwards)"),
+    Feature("auto_start_chrome", "Start the recording Chrome if it isn't open (it stays open afterwards)"),
 )
 
 _BY_NAME: dict[str, Feature] = {feature.name: feature for feature in REGISTRY}

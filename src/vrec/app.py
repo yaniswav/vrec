@@ -18,7 +18,7 @@ from pathlib import Path
 import obsws_python as obs
 from playwright.sync_api import Browser, Page
 
-from vrec import display, history, menu, obs_control
+from vrec import display, history, launcher, menu, obs_control
 from vrec.browser import (
     WindowBounds,
     connect_browser,
@@ -103,7 +103,7 @@ def _run_locked(
     only: str | None,
 ) -> int:
     videos, videos_history = _load_inputs(paths)
-    client, password = _connect_obs(paths, settings, videos, videos_history)
+    client, password = _connect_obs(paths, settings, features, videos, videos_history)
 
     selection, interactive = _choose_selection(
         videos, videos_history, paths, settings, features, test_mode, all_videos, only
@@ -125,6 +125,7 @@ def _run_locked(
     try:
         _prepare_audio(batch)
         _virtual_display_on(batch)
+        _start_chrome_if_needed(batch)
         with connect_browser(
             settings.chrome_port,
             quality_filter=features.enabled("quality_filter"),
@@ -175,10 +176,15 @@ def _load_inputs(paths: Paths) -> tuple[list[Video], history.Videos]:
 
 
 def _connect_obs(
-    paths: Paths, settings: Settings, videos: list[Video], videos_history: history.Videos
+    paths: Paths,
+    settings: Settings,
+    features: FeatureSet,
+    videos: list[Video],
+    videos_history: history.Videos,
 ) -> tuple[obs.ReqClient, str]:
-    """Connect to OBS, restore any leftover audio state, and check it's idle and up to date."""
-    client, password = obs_control.connect(settings, paths)
+    """Connect to OBS (starting it first if needed, feature auto_start_obs), restore any leftover audio
+    state, and check it's idle and up to date."""
+    client, password = launcher.ensure_obs(settings, paths, features)
     _restore_leftover_audio(client, paths.obs_restore)
 
     if client.get_record_status().output_active:
@@ -282,6 +288,11 @@ def _virtual_display_off(batch: Batch) -> None:
         print("Virtual display turned off.")
     except VrecError as e:
         warn(str(e))
+
+
+def _start_chrome_if_needed(batch: Batch) -> None:
+    """Start the recording Chrome if its debug port doesn't answer (feature auto_start_chrome)."""
+    launcher.ensure_chrome(batch.settings, batch.features)
 
 
 def _place_window(batch: Batch) -> None:
