@@ -43,7 +43,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"vrec {__version__}")
     _add_schedule_arguments(parser)
+    _add_selection_arguments(parser)
     return parser
+
+
+def _add_selection_arguments(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--all", action="store_true", help="record every video still to do (NEW/FAILED), no menu"
+    )
+    group.add_argument(
+        "--only", metavar="LIST", default=None, help="record exactly these numbers, e.g. 3,1,5-8, no menu"
+    )
 
 
 def _run_features(args: argparse.Namespace, data_dir: Path) -> int:
@@ -118,7 +129,7 @@ def _run(args: argparse.Namespace) -> int:
     from vrec.errors import VrecError
 
     try:
-        return app.run(data_dir, config_path, args.test)
+        return app.run(data_dir, config_path, args.test, all_videos=args.all, only=args.only)
     except VrecError as e:
         print(str(e))
         return 1

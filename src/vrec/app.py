@@ -61,7 +61,16 @@ class Batch:
     initial_window_state: str | None = None
 
 
-def run(data_dir: Path, config_path: Path, test_mode: bool) -> int:
+def run(
+    data_dir: Path,
+    config_path: Path,
+    test_mode: bool,
+    all_videos: bool = False,
+    only: str | None = None,
+) -> int:
+    if test_mode and all_videos:
+        raise VrecError("--test can't be combined with --all. Use --test --only <number> to test one video.")
+
     paths = Paths(data_dir=data_dir, config=config_path)
     settings = load_settings(config_path)
     features, feature_warnings = load_features(paths.features)
@@ -72,14 +81,23 @@ def run(data_dir: Path, config_path: Path, test_mode: bool) -> int:
         print(f"Features off: {', '.join(disabled)} (change with the menu or vrec --enable).")
 
     with InstanceLock(paths.lock):
-        return _run_locked(paths, settings, features, test_mode)
+        return _run_locked(paths, settings, features, test_mode, all_videos, only)
 
 
-def _run_locked(paths: Paths, settings: Settings, features: FeatureSet, test_mode: bool) -> int:
+def _run_locked(
+    paths: Paths,
+    settings: Settings,
+    features: FeatureSet,
+    test_mode: bool,
+    all_videos: bool,
+    only: str | None,
+) -> int:
     videos, videos_history = _load_inputs(paths)
     client, password = _connect_obs(paths, settings, videos, videos_history)
 
-    selection, interactive = _choose_selection(videos, videos_history, paths, settings, features, test_mode)
+    selection, interactive = _choose_selection(
+        videos, videos_history, paths, settings, features, test_mode, all_videos, only
+    )
     if not selection:
         return 0
 
@@ -166,15 +184,34 @@ def _choose_selection(
     settings: Settings,
     features: FeatureSet,
     test_mode: bool,
+    all_videos: bool,
+    only: str | None,
 ) -> tuple[list[Video], bool]:
-    """Pick which videos to record, via the interactive menu.
+    """Pick which videos to record.
 
-    Returns (selection, interactive): `interactive` is always True here -- it exists so
-    the caller can skip the "press Enter to start" confirmation for a non-interactive
-    selection (added by a later change).
+    Returns (selection, interactive): interactive selections (the menu) still show the
+    "press Enter to start" confirmation; --all/--only skip both the menu and that prompt.
     """
     if test_mode:
         print(f"\nTEST MODE: {settings.test_duration_s:.0f} s of one video, to check your settings.")
+
+    if only is not None:
+        try:
+            numbers = menu.parse_numbers(only, len(videos))
+        except ValueError as e:
+            raise VrecError(f"'{e}' is not valid in --only. Example: 3,1,5-8") from e
+        if not numbers:
+            raise VrecError("--only needs at least one number. Example: 3,1,5-8")
+        return [videos[n - 1] for n in numbers], False
+
+    if all_videos:
+        todo = [v for v in videos if history.status_of(videos_history, v[0]) in history.TODO]
+        if not todo:
+            print("Nothing to record.")
+            return [], False
+        return todo, False
+
+    if test_mode:
         return menu.choose_test_video(videos, videos_history), True
     return menu.main_menu(videos, videos_history, paths.history, features, paths.features), True
 

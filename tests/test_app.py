@@ -5,8 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from vrec import app, history
 from vrec.config import Paths, Settings
+from vrec.errors import VrecError
 from vrec.features import FeatureSet
 from vrec.playlist import url_key
 from vrec.recorder import RecordingResult, StopReason
@@ -249,3 +252,75 @@ def test_keyboard_interrupt_stops_obs_renames_and_restores_mutes(tmp_path: Path)
     assert url_key("https://x/1") not in batch.videos_history
     assert not batch.results
     assert client.mutes_restored == {"Mic": False}
+
+
+# ---------- _choose_selection (lot E: --all / --only) ----------
+
+
+def test_choose_selection_all_returns_todo_in_playlist_order(tmp_path: Path) -> None:
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    videos = [("https://x/1", "V1"), ("https://x/2", "V2"), ("https://x/3", "V3")]
+    videos_history: history.Videos = {}
+    history.record(paths.history, videos_history, "https://x/2", "V2", history.STATUS_DONE)
+
+    selection, interactive = app._choose_selection(
+        videos, videos_history, paths, Settings(), FeatureSet(), False, True, None
+    )
+
+    assert selection == [("https://x/1", "V1"), ("https://x/3", "V3")]
+    assert interactive is False
+
+
+def test_choose_selection_all_nothing_to_do(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    videos = [("https://x/1", "V1")]
+    videos_history: history.Videos = {}
+    history.record(paths.history, videos_history, "https://x/1", "V1", history.STATUS_DONE)
+
+    selection, interactive = app._choose_selection(
+        videos, videos_history, paths, Settings(), FeatureSet(), False, True, None
+    )
+
+    assert selection == []
+    assert interactive is False
+    assert "Nothing to record." in capsys.readouterr().out
+
+
+def test_choose_selection_only_parses_and_orders(tmp_path: Path) -> None:
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    videos = [("https://x/1", "V1"), ("https://x/2", "V2"), ("https://x/3", "V3")]
+
+    selection, interactive = app._choose_selection(
+        videos, {}, paths, Settings(), FeatureSet(), False, False, "3,1"
+    )
+
+    assert selection == [("https://x/3", "V3"), ("https://x/1", "V1")]
+    assert interactive is False
+
+
+def test_choose_selection_only_invalid_raises_clear_error(tmp_path: Path) -> None:
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    videos = [("https://x/1", "V1")]
+
+    with pytest.raises(VrecError, match="not valid in --only"):
+        app._choose_selection(videos, {}, paths, Settings(), FeatureSet(), False, False, "99")
+
+
+def test_choose_selection_test_and_only_skips_menu(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    videos = [("https://x/1", "V1"), ("https://x/2", "V2")]
+
+    selection, interactive = app._choose_selection(
+        videos, {}, paths, Settings(), FeatureSet(), True, False, "2"
+    )
+
+    assert selection == [("https://x/2", "V2")]
+    assert interactive is False
+    assert "TEST MODE" in capsys.readouterr().out
+
+
+def test_run_rejects_test_combined_with_all(tmp_path: Path) -> None:
+    with pytest.raises(VrecError, match="--test"):
+        app.run(tmp_path, tmp_path / "config.toml", test_mode=True, all_videos=True)
