@@ -6,7 +6,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import obsws_python as obs
 from playwright.sync_api import Page
@@ -16,7 +16,7 @@ from vrec.browser import document_script, load_js, route_audio_to
 from vrec.config import Settings
 from vrec.console import ProgressLine, human_duration, warn
 from vrec.features import FeatureSet
-from vrec.monitor import Output, StopReason, WatchConfig, watch
+from vrec.monitor import Output, PlayerState, StopReason, WatchConfig, watch
 from vrec.naming import FAILED_BLACK_PREFIX, INCOMPLETE_PREFIX, TEST_PREFIX, clean_title, rename_recording
 from vrec.obs_control import AudioMeter, is_black_frame
 
@@ -60,8 +60,9 @@ class _PagePlayer:
     def __init__(self, page: Page) -> None:
         self._page = page
 
-    def state(self) -> dict[str, Any] | None:
-        return self._page.evaluate(load_js("state.js"))
+    def state(self) -> PlayerState | None:
+        # page.evaluate() returns Any (it's arbitrary JS); state.js's shape matches PlayerState.
+        return cast("PlayerState | None", self._page.evaluate(load_js("state.js")))
 
     def play(self) -> None:
         self._page.evaluate(JS_PLAY)

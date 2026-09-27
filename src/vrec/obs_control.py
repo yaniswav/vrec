@@ -10,7 +10,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import obsws_python as obs
 from obsws_python.subs import Subs
@@ -91,7 +91,8 @@ class AudioMeter:
 
 def current_scene(client: obs.ReqClient) -> str:
     r = client.get_current_program_scene()
-    return getattr(r, "scene_name", None) or r.current_program_scene_name
+    # obsws_python ships no type hints (it's Any throughout); this is always a str at runtime.
+    return cast(str, getattr(r, "scene_name", None) or r.current_program_scene_name)
 
 
 def prepare_audio(
@@ -186,7 +187,10 @@ def is_black_frame(client: obs.ReqClient, scene: str, settings: Settings) -> boo
     try:
         r = client.get_source_screenshot(scene, "png", 64, 36, -1)
         data = base64.b64decode(r.image_data.split(",", 1)[1])
-        return Image.open(io.BytesIO(data)).convert("L").getextrema()[1] < settings.black_level
+        # Pillow types getextrema() as a union covering multi-band images too, but a single
+        # "L" (grayscale) band always yields the plain (min, max) form.
+        extrema = cast(tuple[float, float], Image.open(io.BytesIO(data)).convert("L").getextrema())
+        return extrema[1] < settings.black_level
     except Exception:
         return None
 
@@ -195,7 +199,7 @@ def stop_if_recording(client: obs.ReqClient) -> str | None:
     """Stop OBS recording if one is active. Returns the output path, or None."""
     try:
         if client.get_record_status().output_active:
-            return client.stop_record().output_path
+            return cast(str, client.stop_record().output_path)
     except Exception:
         pass
     return None

@@ -17,3 +17,13 @@ repos:
       - id: ruff
         args: ["--fix"]
       - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.1
+    hooks:
+      - id: mypy
+        # Full-project run (matching [tool.mypy] files = ["src"] in pyproject.toml) instead
+        # of just the changed files: strict mode has cross-file effects (e.g. no-any-return
+        # through an imported function's inferred type) a partial run could miss.
+        pass_filenames: false
+        additional_dependencies: ["playwright>=1.40", "pillow>=10"]

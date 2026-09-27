@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, cast
 
 from vrec.naming import find_existing_recording
 from vrec.playlist import url_key
@@ -47,7 +47,20 @@ _LEGACY_DETAIL = {
     "chargement bloqué": "loading stalled",
 }
 
-Videos = dict[str, dict[str, Any]]
+
+class VideoRecord(TypedDict):
+    """One video's entry in history.json, as written by `record()`/`_migrate_legacy()`."""
+
+    url: str
+    title: str
+    status: str | None
+    detail: str
+    file: str
+    quality: str
+    date: str
+
+
+Videos = dict[str, VideoRecord]
 
 
 def label(status: str | None) -> str:
@@ -68,7 +81,9 @@ def load(path: Path) -> Videos:
         return {}
 
     if isinstance(raw, dict) and raw.get("version") == 1:
-        return raw.get("videos", {})
+        # Our own previously-saved file (see `save()`), not externally validated -- trusted
+        # to match the Videos shape.
+        return cast(Videos, raw.get("videos", {}))
 
     videos = _migrate_legacy(raw if isinstance(raw, dict) else {})
     save(path, videos)
@@ -80,8 +95,10 @@ def _migrate_legacy(raw: dict[str, Any]) -> Videos:
     for key, entry in raw.items():
         if not isinstance(entry, dict):
             continue
-        status = _LEGACY_STATUS.get(entry.get("etat"), entry.get("etat"))
-        detail = _LEGACY_DETAIL.get(entry.get("detail", ""), entry.get("detail", ""))
+        etat = entry.get("etat")
+        status: str | None = _LEGACY_STATUS.get(etat, etat) if isinstance(etat, str) else etat
+        detail_raw = entry.get("detail", "")
+        detail = _LEGACY_DETAIL.get(detail_raw, detail_raw) if isinstance(detail_raw, str) else detail_raw
         videos[key] = {
             "url": entry.get("lien", ""),
             "title": entry.get("titre", ""),
@@ -127,15 +144,16 @@ def record(
 
 
 def status_of(videos: Videos, url: str) -> str | None:
-    return (videos.get(url_key(url)) or {}).get("status")
+    known = videos.get(url_key(url))
+    return known["status"] if known else None
 
 
 def display_title(videos: Videos, url: str, title: str | None) -> str:
     """Best title to show for a video: the given one, else the last known one, else derived from the URL."""
     if title:
         return title
-    known = videos.get(url_key(url)) or {}
-    if known.get("title"):
+    known = videos.get(url_key(url))
+    if known and known.get("title"):
         return known["title"]
     return url_key(url).rsplit("/", 1)[-1].replace("-", " ").strip() or url
 
