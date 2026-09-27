@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vrec"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Automatic video recording driven by OBS and Chrome."
 license = "MIT"
 license-files = ["LICENSE"]
@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.5"]
+dev = ["pytest>=8", "pytest-cov>=6", "pre-commit>=4", "ruff>=0.5"]
 
 [project.scripts]
 vrec = "vrec.__main__:main"
@@ -36,6 +36,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 vrec = ["js/*.js"]
+
+[tool.setuptools.dynamic]
+version = { attr = "vrec.__version__" }
 
 [tool.ruff]
 line-length = 110
@@ -50,3 +53,11 @@ quote-style = "double"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.coverage.run]
+source = ["vrec"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
