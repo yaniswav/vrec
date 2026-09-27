@@ -59,6 +59,10 @@ class Paths:
     def obs_restore(self) -> Path:
         return self.data_dir / "obs_restore.json"
 
+    @property
+    def features(self) -> Path:
+        return self.data_dir / "features.toml"
+
 
 # Maps [toml section][toml key] -> (Settings field name, expected type).
 _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {

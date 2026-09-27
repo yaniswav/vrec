@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from vrec import history
+from vrec.features import LEGEND, FeatureSet, render_lines, save_features
 from vrec.playlist import url_key
 
 
@@ -65,7 +66,11 @@ def show_list(videos: list[tuple[str, str | None]], videos_history: history.Vide
 
 
 def main_menu(
-    videos: list[tuple[str, str | None]], videos_history: history.Videos, history_path: Path
+    videos: list[tuple[str, str | None]],
+    videos_history: history.Videos,
+    history_path: Path,
+    features: FeatureSet,
+    features_path: Path,
 ) -> list[tuple[str, str | None]]:
     while True:
         show_list(videos, videos_history)
@@ -80,6 +85,7 @@ def main_menu(
         print("  2 - Choose which ones, in the order you want (even already-done ones)")
         print("  3 - Mark videos as already done (without recording them)")
         print("  4 - Reset videos back to NEW")
+        print("  5 - Features on/off")
         print("  Q - Quit")
         choice = ask("> ").lower()
 
@@ -116,6 +122,9 @@ def main_menu(
                     history.record(history_path, videos_history, url, display, history.STATUS_NEW, "reset")
             history.save(history_path, videos_history)
             continue
+        elif choice == "5":
+            _features_menu(features, features_path)
+            continue
         elif choice in ("q", ""):
             return []
         else:
@@ -128,6 +137,28 @@ def main_menu(
         if ask("\nEnter to start, Q to go back to the menu: ").lower() == "q":
             continue
         return [videos[n - 1] for n in selection]
+
+
+def _features_menu(features: FeatureSet, features_path: Path) -> None:
+    """Show the numbered feature list, toggle by number, save immediately. Loops until Enter."""
+    while True:
+        print("\n===== FEATURES ON/OFF =====")
+        items = features.items()
+        for line in render_lines(features, numbered=True):
+            print(line)
+        print(LEGEND)
+        text = ask("\nNumbers to switch (e.g. 2,5), Enter to go back: ")
+        if not text:
+            return
+        try:
+            numbers = parse_numbers(text, len(items))
+        except ValueError as e:
+            print(f"   '{e}' is not valid. Example: 2,5   (Enter to go back)")
+            continue
+        for n in numbers:
+            feature, value = items[n - 1]
+            features.set(feature.name, not value)
+        save_features(features_path, features)
 
 
 def choose_test_video(

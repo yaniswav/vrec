@@ -13,6 +13,7 @@ from vrec.browser import connect_browser, window_state
 from vrec.config import Paths, Settings, load_settings
 from vrec.console import first_line, warn
 from vrec.errors import VrecError
+from vrec.features import FeatureSet, load_features
 from vrec.lock import InstanceLock
 from vrec.naming import INTERRUPTED_PREFIX, rename_recording
 from vrec.playlist import read_playlist
@@ -28,12 +29,18 @@ from vrec.recorder import (
 def run(data_dir: Path, config_path: Path, test_mode: bool) -> int:
     paths = Paths(data_dir=data_dir, config=config_path)
     settings = load_settings(config_path)
+    features, feature_warnings = load_features(paths.features)
+    for message in feature_warnings:
+        warn(message)
+    disabled = features.disabled()
+    if disabled:
+        print(f"Features off: {', '.join(disabled)} (change with the menu or vrec --enable).")
 
     with InstanceLock(paths.lock):
-        return _run_locked(paths, settings, test_mode)
+        return _run_locked(paths, settings, features, test_mode)
 
 
-def _run_locked(paths: Paths, settings: Settings, test_mode: bool) -> int:
+def _run_locked(paths: Paths, settings: Settings, features: FeatureSet, test_mode: bool) -> int:
     if not paths.videos.exists():
         raise VrecError(
             f"File not found: {paths.videos}\nCopy videos.example.txt to {paths.videos} and add your links."
@@ -58,7 +65,7 @@ def _run_locked(paths: Paths, settings: Settings, test_mode: bool) -> int:
         print(f"\nTEST MODE: {settings.test_duration_s:.0f} s of one video, to check your settings.")
         selection = menu.choose_test_video(videos, videos_history)
     else:
-        selection = menu.main_menu(videos, videos_history, paths.history)
+        selection = menu.main_menu(videos, videos_history, paths.history, features, paths.features)
     if not selection:
         return 0
 
