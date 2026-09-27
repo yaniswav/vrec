@@ -282,14 +282,12 @@ def test_menu_toggle_invalid_input_does_not_crash(tmp_path: Path, monkeypatch: p
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=False, reason="wired/documented by later lots")
 def test_every_feature_is_checked_somewhere() -> None:
     text = "\n".join(p.read_text(encoding="utf-8") for p in SRC_DIR.glob("*.py"))
     for name in feature_names():
         assert f'enabled("{name}")' in text, f"{name} is never checked with enabled(...)"
 
 
-@pytest.mark.xfail(strict=False, reason="wired/documented by later lots")
 def test_every_feature_is_documented_in_readme() -> None:
     text = README.read_text(encoding="utf-8")
     for name in feature_names():

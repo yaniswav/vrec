@@ -18,7 +18,7 @@ Run all of these and fix anything they flag:
 ```
 ruff check .
 ruff format --check .
-mypy .
+mypy
 pytest
 ```
 

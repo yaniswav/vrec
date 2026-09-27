@@ -80,5 +80,7 @@ source = ["vrec"]
 branch = true
 
 [tool.coverage.report]
+# Measured at 79% for 0.2.0; the gap is mostly Playwright/OBS glue exercised by real runs.
+fail_under = 75
 show_missing = true
 skip_covered = true
