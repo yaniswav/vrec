@@ -27,9 +27,15 @@ Unattended OBS recording of web videos, one after another.
 - **Audio** is routed through **VB-CABLE**, a virtual audio cable, so OBS can capture Chrome's sound
   without playing it on your speakers.
 - **End detection**: the page's video element reports when playback has ended; if that signal never
-  arrives, recording stops anyway once the video's duration plus a safety margin has elapsed.
-- **Buffering pauses**: if the loaded buffer runs low, both the video and the OBS recording are paused
-  until enough is buffered again, then resumed together — no frozen frames in the final file.
+  arrives, recording is cut once the video's duration plus a couple of minutes has elapsed (reviewed
+  afterwards, not retried automatically). Independently of that, a hard wall-clock cap (duration x 3
+  plus 10 minutes by default) stops the recording no matter what, even mid-pause; hitting it is treated
+  as a failure and retried by "Record everything".
+- **Buffering pauses**: if the loaded reserve drops below a threshold (2 s by default), both the video
+  and the OBS recording are paused until it climbs back above another threshold (10 s by default) — or
+  has simply stopped growing for a few seconds — then resumed together, so the final file never
+  contains a frozen frame. A load that stays stalled for too long (5 minutes by default) is cut, and
+  vrec immediately retries that same video once, one quality step lower.
 - **Quality forcing**: the player's manifest is intercepted so it only offers the best available
   quality, instead of letting adaptive streaming start low and ramp up.
 
@@ -57,10 +63,10 @@ Unattended OBS recording of web videos, one after another.
 Running `start.bat` (or `vrec`) shows a menu of your videos with their current status, then:
 
 ```
-1 - Record everything (new videos and failures)
-2 - Choose which ones, in whatever order you want
+1 - Record everything (the new ones and the failures)
+2 - Choose which ones, in the order you want (even already-done ones)
 3 - Mark videos as already done (without recording them)
-4 - Reset videos back to "NEW"
+4 - Reset videos back to NEW
 Q - Quit
 ```
 
@@ -75,7 +81,28 @@ as done; the one that was in progress is renamed `INTERRUPTED - <title>` and mar
 ## Configuration
 
 Settings live in a TOML file (default `data\config.toml`), documented in
-[config.example.toml](config.example.toml). Copy it to `data\config.toml` and edit as needed.
+[config.example.toml](config.example.toml). Copy it to `data\config.toml` and edit as needed. Every key
+is optional; a missing file or key falls back to the default shown below.
+
+| Section | Key | Default | Meaning |
+|---|---|---|---|
+| `[obs]` | `host` | `localhost` | Hostname of the machine running OBS. |
+| `[obs]` | `port` | `4455` | obs-websocket server port. |
+| `[obs]` | `audio_source_name` | `Chrome Audio (VB-CABLE)` | Name of the OBS audio input source that carries Chrome's sound; created automatically if missing. |
+| `[chrome]` | `debug_port` | `9222` | Remote debugging port Chrome was started with (see `launch_chrome.bat`). |
+| `[recording]` | `lead_in` | `2` | Seconds recorded before playback starts. |
+| `[recording]` | `tail` | `2` | Seconds recorded after the video ends. |
+| `[recording]` | `fullscreen_settle` | `2` | Seconds to wait after going fullscreen before rewinding the video. |
+| `[recording]` | `test_duration` | `30` | Duration recorded in `--test` mode, in seconds. |
+| `[recording]` | `max_wall_factor` | `3` | Wall-clock safety cap: give up on a video after roughly (duration x this factor) seconds. |
+| `[recording]` | `max_wall_extra` | `600` | Extra seconds added on top of that cap (also used when the duration is unknown). |
+| `[checks]` | `black_level` | `20` | Maximum average brightness (0-255) below which a frame is considered black. |
+| `[checks]` | `abort_if_black_after` | `60` | Give up on a video that stays black for this many seconds. |
+| `[checks]` | `audio_level` | `0.003` | Minimum audio level to consider that there is sound (roughly -50 dB). |
+| `[buffering]` | `pause_below` | `2` | Seconds of buffered video below which playback and recording pause. |
+| `[buffering]` | `resume_at` | `10` | Seconds of buffered video required before playback and recording resume. |
+| `[buffering]` | `max_stall` | `300` | Give up on a video whose loading stays stalled for this many seconds. |
+| `[quality]` | `max_height` | `0` | Highest video height (px) vrec asks the player for; `0` = no cap, always the best. |
 
 Environment variables:
 
@@ -83,8 +110,8 @@ Environment variables:
 |---|---|
 | `VREC_DATA_DIR` | Overrides the data directory (default `./data`) |
 | `VREC_OBS_PASSWORD` | OBS WebSocket password, skips the password file/prompt |
-| `VREC_CHROME_PORT` | Chrome DevTools port used by `launch_chrome.bat` and vrec (default `9222`) |
-| `VREC_CHROME_PROFILE` | Chrome profile directory used by `launch_chrome.bat` |
+| `VREC_CHROME_PORT` | Chrome DevTools port that `launch_chrome.bat` starts Chrome with (default `9222`). vrec itself connects on `[chrome] debug_port` from `config.toml`, so change both together if you use a non-default port. |
+| `VREC_CHROME_PROFILE` | Chrome profile directory used by `launch_chrome.bat` (default `%LOCALAPPDATA%\vrec\chrome-profile`) |
 
 CLI flags:
 
@@ -108,7 +135,7 @@ Recordings are written to your OBS recording folder. File name prefixes:
 | `<title> (2).mp4` | Re-recorded; the previous file is never overwritten |
 | `TEST - <title>` | Produced by `--test` mode |
 | `FAILED black image - <title>` | Image stayed black for too long, recording abandoned (likely DRM-protected) |
-| `INCOMPLETE - <title>` | Loading stalled, or the video was removed from the page |
+| `INCOMPLETE - <title>` | Loading stalled (even after the automatic retry), the video was removed from the page, or the wall-clock cap was hit |
 | `INTERRUPTED - <title>` | Recording was cut short by Ctrl+C or an error |
 
 End-of-run status shown in the menu and summary:
@@ -116,9 +143,13 @@ End-of-run status shown in the menu and summary:
 | Status | Meaning |
 |---|---|
 | `OK` (-> DONE) | Everything went fine |
-| `CHECK` (-> REVIEW) | Recorded, but something needs a look: black image?, no audio, loading stalled, or the time limit was reached before the end was detected |
-| `FAILED` (-> FAILED) | Image stayed black the whole time (probably a protected video) |
+| `CHECK: ...` (-> REVIEW) | Recorded, but something needs a look: black image?, no audio, and/or the time limit was reached before the end was detected. Not retried automatically. |
+| `FAILED: black image (protected video?)` (-> FAILED) | Image stayed black the whole time (probably a protected video) |
+| `FAILED: incomplete (...)` (-> FAILED) | Loading stalled, the video was removed from the page, or it took too long overall |
 | `ERROR: ...` (-> FAILED) | A problem occurred on the page; the message explains what |
+
+`FAILED` results (of any kind above) are retried by "Record everything". A stalled load also gets one
+immediate retry, one quality step lower, before it is ever counted as failed.
 
 See [docs/troubleshooting.md](docs/troubleshooting.md) for every message in detail.
 
