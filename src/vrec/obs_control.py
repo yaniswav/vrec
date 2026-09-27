@@ -141,14 +141,17 @@ def restore_mutes(client: obs.ReqClient, mutes: dict[str, bool]) -> None:
             client.set_input_mute(name, was_muted)
 
 
-def is_black_frame(client: obs.ReqClient, scene: str, settings: Settings) -> bool:
-    """Grab a tiny screenshot of the scene and check whether it's essentially black."""
+def is_black_frame(client: obs.ReqClient, scene: str, settings: Settings) -> bool | None:
+    """Grab a tiny screenshot of the scene and check whether it's essentially black.
+
+    Returns None if the screenshot itself failed (not evidence either way).
+    """
     try:
         r = client.get_source_screenshot(scene, "png", 64, 36, -1)
         data = base64.b64decode(r.image_data.split(",", 1)[1])
         return Image.open(io.BytesIO(data)).convert("L").getextrema()[1] < settings.black_level
     except Exception:
-        return False  # when in doubt, don't block the recording
+        return None
 
 
 def stop_if_recording(client: obs.ReqClient) -> str | None:

@@ -12,9 +12,14 @@ INVISIBLE_CHARS = re.compile("[\u200b-\u200f\u202a-\u202e\u2060\ufeff]")
 # File name prefixes used by recorder.record_one().
 TEST_PREFIX = "TEST"
 FAILED_BLACK_PREFIX = "FAILED black image"
+INCOMPLETE_PREFIX = "INCOMPLETE"
+INTERRUPTED_PREFIX = "INTERRUPTED"  # recordings cut short by Ctrl+C or an error (lot 4)
 
 # Legacy (French) failure marker used by recordings made before this rewrite.
 _LEGACY_FAILED_MARKER = "ECHEC"
+
+# Stems starting with any of these are never a genuine completed recording.
+_EXCLUDED_PREFIXES = (TEST_PREFIX, INCOMPLETE_PREFIX, INTERRUPTED_PREFIX)
 
 
 def clean_title(text: str | None) -> str:
@@ -35,7 +40,7 @@ def find_existing_recording(folder: str | Path | None, title: str | None) -> Pat
             if (
                 f.is_file()
                 and (f.stem == title or f.stem.endswith(" - " + title))
-                and not f.stem.startswith(TEST_PREFIX)
+                and not f.stem.startswith(_EXCLUDED_PREFIXES)
                 and "FAILED" not in f.stem
                 and _LEGACY_FAILED_MARKER not in f.stem
             ):

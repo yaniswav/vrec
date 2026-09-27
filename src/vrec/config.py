@@ -19,7 +19,7 @@ class Settings:
     chrome_port: int = 9222
     lead_in_s: float = 2
     tail_s: float = 2
-    fullscreen_settle_s: float = 5
+    fullscreen_settle_s: float = 2
     test_duration_s: float = 30
     black_level: int = 20
     abort_if_black_after_s: float = 60

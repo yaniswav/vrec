@@ -16,7 +16,7 @@ from vrec import history
 from vrec.browser import load_js
 from vrec.config import Settings
 from vrec.console import human_duration, warn
-from vrec.naming import FAILED_BLACK_PREFIX, TEST_PREFIX, clean_title, rename_recording
+from vrec.naming import FAILED_BLACK_PREFIX, INCOMPLETE_PREFIX, TEST_PREFIX, clean_title, rename_recording
 from vrec.obs_control import AudioMeter, is_black_frame
 
 JS_PLAY = "() => { window.__vrecVideo.play().catch(() => {}); }"
@@ -31,6 +31,11 @@ class StopReason(StrEnum):
     VIDEO_GONE = "video removed from page"
     STALLED = "loading stalled"
     BLACK = "black image"
+
+
+# Reasons that mean the recording is missing part of the video, not just unverified:
+# never fully recorded, so it should be retried rather than merely reviewed.
+INCOMPLETE_REASONS = frozenset({StopReason.STALLED, StopReason.VIDEO_GONE})
 
 
 @dataclass
@@ -204,12 +209,16 @@ def record_one(
 
         if state["t"] != last_t:
             last_t, last_progress = state["t"], time.time()
+            resumes = 0
         elif time.time() - last_progress > 15 and not stall_warned:
             warn("The video isn't advancing (loading?). Recording continues.")
             stall_warned = True
 
         if not result.image_ok and time.time() >= next_black_check:
-            if is_black_frame(client, scene, settings):
+            black = is_black_frame(client, scene, settings)
+            if black is None:
+                next_black_check = time.time() + 5  # screenshot failed: retry later, don't abort
+            elif black:
                 next_black_check = time.time() + 5
                 if elapsed > settings.abort_if_black_after_s:
                     result.reason = StopReason.BLACK.value
@@ -234,9 +243,13 @@ def record_one(
         stem = f"{TEST_PREFIX} - {result.title}"
     elif result.reason == StopReason.BLACK.value:
         stem = f"{FAILED_BLACK_PREFIX} - {result.title}"
+    elif result.reason in INCOMPLETE_REASONS:
+        stem = f"{INCOMPLETE_PREFIX} - {result.title}"
     else:
         stem = result.title
     result.file = rename_recording(path, stem)
+    if result.file == Path(path):
+        warn(f"Couldn't rename the recording, it keeps its OBS name: {result.file.name}")
 
     return result
 
@@ -247,6 +260,8 @@ def status_text(result: RecordingResult) -> str:
         return result.reason
     if result.reason == StopReason.BLACK.value:
         return "FAILED: black image (protected video?)"
+    if result.reason in INCOMPLETE_REASONS:
+        return f"FAILED: incomplete ({result.reason})"
     problems = []
     if not result.image_ok:
         problems.append("black image?")

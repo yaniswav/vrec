@@ -33,8 +33,9 @@ def read_playlist(path: Path) -> list[tuple[str, str | None]]:
         match = _URL_RE.search(line)
         if match:
             title = line[: match.start()].strip() or previous_title
-            if match.group(0) not in seen:
-                seen.add(match.group(0))
+            key = url_key(match.group(0))
+            if key not in seen:
+                seen.add(key)
                 videos.append((match.group(0), clean_title(title) if title else None))
             previous_title = None
         else:

@@ -26,7 +26,7 @@ lead_in = 2
 tail = 2
 # Seconds to wait after going fullscreen, so any "Press Esc to exit
 # fullscreen" banner has time to disappear before the video is rewound.
-fullscreen_settle = 5
+fullscreen_settle = 2
 # Duration recorded in --test mode, in seconds.
 test_duration = 30
 
