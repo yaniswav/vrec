@@ -5,7 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vrec"
 dynamic = ["version"]
-description = "Automatic video recording driven by OBS and Chrome."
+description = "Unattended OBS recording of web videos, one after another."
+readme = "README.md"
+authors = [{ name = "Yanis" }]
+keywords = ["obs", "obs-websocket", "recording", "playwright", "chrome", "automation", "vr"]
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
@@ -14,6 +17,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Development Status :: 4 - Beta",
     "Operating System :: Microsoft :: Windows",
     "Intended Audience :: End Users/Desktop",
     "Topic :: Multimedia :: Video :: Capture",
@@ -24,6 +29,11 @@ dependencies = [
     "obsws-python>=1.6",
     "pillow>=10",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yaniswav/vrec"
+Issues = "https://github.com/yaniswav/vrec/issues"
+Changelog = "https://github.com/yaniswav/vrec/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-cov>=6", "pre-commit>=4", "ruff>=0.5"]
