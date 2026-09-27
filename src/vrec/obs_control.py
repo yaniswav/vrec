@@ -8,11 +8,14 @@ import io
 import json
 import logging
 import os
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
 import obsws_python as obs
+from obsws_python.error import OBSSDKRequestError
 from obsws_python.subs import Subs
 from PIL import Image
 
@@ -61,6 +64,36 @@ def connect(settings: Settings, paths: Paths) -> tuple[obs.ReqClient, str]:
             "OBS refused the connection: the password is probably wrong. Restart, it will be asked again."
         ) from e
     return client, password
+
+
+# obs-websocket's "NotReady" status: OBS accepts connections before it has finished loading.
+_NOT_READY = 207
+
+
+def wait_until_ready(
+    client: obs.ReqClient,
+    timeout_s: float,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.time,
+) -> None:
+    """Wait until OBS answers requests (it replies "not ready" while it is still loading)."""
+    deadline = clock() + timeout_s
+    announced = False
+    while True:
+        try:
+            client.get_record_status()
+            return
+        except OBSSDKRequestError as e:
+            if e.code != _NOT_READY:
+                raise
+            if clock() >= deadline:
+                raise VrecError(
+                    f"OBS is still loading after {timeout_s:.0f} s. Try again once it is fully open."
+                ) from e
+            if not announced:
+                print("Waiting for OBS to finish loading...")
+                announced = True
+            sleep(1)
 
 
 def connect_audio_listener(settings: Settings, password: str, meter: AudioMeter) -> obs.EventClient | None:

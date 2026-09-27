@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   needed), and sound reaching OBS — then either offers to record anyway (menu) or stops the batch
   before recording anything (`--all`/`--only`) if something's wrong.
 
+### Fixed
+
+- Wait for OBS to finish loading instead of failing with "OBS is not ready to perform the request" (code 207) right after it starts.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

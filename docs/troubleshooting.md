@@ -150,6 +150,13 @@ see in advance what will happen.
 Printed while vrec starts OBS itself (feature `auto_start_obs`) and once its WebSocket server answers.
 Not an error — informational only.
 
+### "Waiting for OBS to finish loading..." / "OBS is still loading after 60 s. Try again once it is fully open."
+
+OBS accepts connections a little before it has finished loading, and answers "not ready" meanwhile.
+vrec waits for it (up to `[obs] start_timeout`, 60 s by default), whether vrec started OBS or you just
+opened it. If it takes longer (many sources or plugins, slow disk), wait for OBS to be fully open and
+run again, or raise `start_timeout` in `config.toml`.
+
 ### "OBS is open but its WebSocket server doesn't answer. In OBS: Tools > WebSocket Server Settings > Enable WebSocket server."
 
 OBS is already running (vrec checked with `tasklist`), so vrec won't start a second copy of it — OBS

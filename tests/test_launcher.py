@@ -233,6 +233,7 @@ def _paths(tmp_path: Path) -> Paths:
 
 def test_ensure_obs_returns_immediately_when_already_reachable(tmp_path: Path) -> None:
     client = object()
+    readied: list[object] = []
 
     def connect(settings: Settings, paths: Paths) -> tuple[object, str]:
         return client, "pw"
@@ -245,8 +246,10 @@ def test_ensure_obs_returns_immediately_when_already_reachable(tmp_path: Path) -
         find=lambda s: pytest.fail("should not look for obs"),
         running=lambda: pytest.fail("should not check tasklist"),
         start=lambda exe: pytest.fail("should not start obs"),
+        ready=lambda c, timeout: readied.append(c),
     )
     assert result == (client, "pw")
+    assert readied == [client]  # an OBS opened by hand may still be loading too
 
 
 def test_ensure_obs_starts_and_connects_after_retries(tmp_path: Path) -> None:
@@ -261,6 +264,7 @@ def test_ensure_obs_starts_and_connects_after_retries(tmp_path: Path) -> None:
 
     started: list[Path] = []
     sleeps: list[float] = []
+    readied: list[tuple[object, float]] = []
     clock_values = iter([0.0, 2.0, 4.0, 6.0, 8.0, 10.0])
     exe = tmp_path / "obs64.exe"
 
@@ -274,9 +278,11 @@ def test_ensure_obs_starts_and_connects_after_retries(tmp_path: Path) -> None:
         start=lambda e: started.append(e),
         sleep=sleeps.append,
         clock=lambda: next(clock_values),
+        ready=lambda c, timeout: readied.append((c, timeout)),
     )
 
     assert result == (client, "pw")
+    assert readied == [(client, 54.0)]  # waits for OBS to finish loading, within what's left
     assert started == [exe]
     assert attempts["n"] == 4  # the initial attempt, then 3 retries before success
     assert sleeps == [2.0, 2.0, 2.0]

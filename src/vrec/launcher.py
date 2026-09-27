@@ -47,6 +47,8 @@ _CHROME_APP_PATHS_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\ch
 
 _START_POLL_S = 2.0
 
+ReadyFn = Callable[[obs.ReqClient, float], None]
+
 
 def _read_registry_default(key_path: str) -> str | None:
     """Read the default (unnamed) string value of an HKEY_LOCAL_MACHINE key. None if missing.
@@ -130,6 +132,7 @@ def ensure_obs(
     start: StartObsFn = start_obs,
     sleep: SleepFn = time.sleep,
     clock: ClockFn = time.time,
+    ready: ReadyFn = obs_control.wait_until_ready,
 ) -> tuple[obs.ReqClient, str]:
     """Connect to OBS, starting it first if it isn't open (feature `auto_start_obs`).
 
@@ -137,7 +140,9 @@ def ensure_obs(
     open": it propagates immediately, same as without this feature.
     """
     try:
-        return connect(settings, paths)
+        client, password = connect(settings, paths)
+        ready(client, settings.obs_start_timeout_s)
+        return client, password
     except obs_control.ObsUnreachable:
         if not features.enabled("auto_start_obs"):
             raise
@@ -167,6 +172,7 @@ def ensure_obs(
                     "Server Settings > Enable WebSocket server."
                 ) from None
             continue
+        ready(client, max(deadline - clock(), 5.0))
         print("OBS started.")
         return client, password
 

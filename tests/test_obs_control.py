@@ -11,7 +11,9 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
+from vrec import obs_control
 from vrec.config import Settings
+from vrec.errors import VrecError
 from vrec.obs_control import _AUDIO_SOURCE_KIND, AudioMeter, is_black_frame, prepare_audio, restore_mutes
 
 SCENE = "Scene"
@@ -238,3 +240,59 @@ def test_is_black_frame_none_on_exception() -> None:
     client = FakeObsClient([], [], {}, {})
     client.screenshot_should_fail = True
     assert is_black_frame(client, SCENE, Settings()) is None
+
+
+# ---------------------------------------------------------------------------
+# wait_until_ready: OBS accepts connections before it has finished loading
+# ---------------------------------------------------------------------------
+
+
+class _LoadingObs:
+    def __init__(self, not_ready_times: int, code: int = 207) -> None:
+        self.left, self.code, self.calls = not_ready_times, code, 0
+
+    def get_record_status(self) -> object:
+        from obsws_python.error import OBSSDKRequestError
+
+        self.calls += 1
+        if self.left:
+            self.left -= 1
+            raise OBSSDKRequestError("GetRecordStatus", self.code, "OBS is not ready to perform the request.")
+        return object()
+
+
+def test_wait_until_ready_waits_while_obs_loads(capsys: pytest.CaptureFixture[str]) -> None:
+    client = _LoadingObs(not_ready_times=3)
+    sleeps: list[float] = []
+    obs_control.wait_until_ready(client, 60, sleep=sleeps.append, clock=lambda: 0.0)  # type: ignore[arg-type]
+    assert client.calls == 4 and sleeps == [1, 1, 1]
+    assert capsys.readouterr().out.count("Waiting for OBS to finish loading...") == 1
+
+
+def test_wait_until_ready_returns_at_once_when_ready() -> None:
+    client = _LoadingObs(not_ready_times=0)
+    obs_control.wait_until_ready(client, 60, sleep=lambda s: pytest.fail("no wait"), clock=lambda: 0.0)  # type: ignore[arg-type]
+    assert client.calls == 1
+
+
+def test_wait_until_ready_gives_up() -> None:
+    times = iter([0.0, 10.0, 70.0])
+    with pytest.raises(VrecError, match="still loading after 60 s"):
+        obs_control.wait_until_ready(
+            _LoadingObs(not_ready_times=99),
+            60,
+            sleep=lambda s: None,
+            clock=lambda: next(times),  # type: ignore[arg-type]
+        )
+
+
+def test_wait_until_ready_lets_other_errors_through() -> None:
+    from obsws_python.error import OBSSDKRequestError
+
+    with pytest.raises(OBSSDKRequestError):
+        obs_control.wait_until_ready(
+            _LoadingObs(not_ready_times=1, code=500),
+            60,
+            sleep=lambda s: None,
+            clock=lambda: 0.0,  # type: ignore[arg-type]
+        )
