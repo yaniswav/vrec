@@ -86,6 +86,10 @@ class FakeClient:
     def get_scene_item_list(self, name: str) -> SimpleNamespace:
         return SimpleNamespace(scene_items=self.scene_items)
 
+    def get_scene_list(self) -> SimpleNamespace:
+        scenes = [{"sceneName": self.scene_name}, {"sceneName": "vrec"}]
+        return SimpleNamespace(scenes=scenes, current_program_scene_name=self.scene_name)
+
     def get_input_list(self, kind: str | None = None) -> SimpleNamespace:
         inputs = self.wasapi_inputs
         if kind is not None:
@@ -400,7 +404,16 @@ def test_check_scene_capture_found_ok(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_check_scene_capture_missing_warns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = _ctx(tmp_path, FakeClient(scene_items=[{"inputKind": "browser_source"}]), monkeypatch)
+    ctx.features.set("obs_scene", False)  # the user's own scene must hold the capture
     assert doctor.check_scene_capture(ctx).status == "warn"
+
+
+def test_check_scene_capture_missing_in_own_scene_is_added(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path, FakeClient(scene_items=[{"inputKind": "browser_source"}]), monkeypatch)
+    check = doctor.check_scene_capture(ctx)
+    assert check.status == "info" and "add a display capture" in check.detail
 
 
 # ---------------------------------------------------------------------------
@@ -638,3 +651,22 @@ def test_audio_routing_info(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert "CABLE Input" in doctor.check_audio_routing(ctx).detail
     ctx.features.set("audio_sink", False)
     assert "volume mixer" in doctor.check_audio_routing(ctx).detail
+
+
+# check_scene_capture with vrec's own scene (obs_scene feature)
+
+
+def test_scene_capture_own_scene_missing_is_info(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = _ctx(tmp_path, _passing_client(tmp_path), monkeypatch)
+    monkeypatch.setattr(doctor.obs_scene, "scene_names", lambda client: ["Main"])
+    check = doctor.check_scene_capture(ctx)
+    assert check.status == "info" and "create its scene 'vrec'" in check.detail
+
+
+def test_scene_capture_feature_off_checks_the_program_scene(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path, _passing_client(tmp_path), monkeypatch)
+    ctx.features.set("obs_scene", False)
+    monkeypatch.setattr(doctor.obs_scene, "scene_names", lambda client: pytest.fail("not needed"))
+    assert doctor.check_scene_capture(ctx).status in ("ok", "warn")

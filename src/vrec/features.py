@@ -41,6 +41,8 @@ REGISTRY: tuple[Feature, ...] = (
     Feature("audio_sink", "Send only the recorded video's sound to CABLE Input (no Windows mixer setup)"),
     Feature("auto_start_obs", "Start OBS if it isn't open (it stays open afterwards)"),
     Feature("auto_start_chrome", "Start the recording Chrome if it isn't open (it stays open afterwards)"),
+    Feature("obs_scene", "Record from vrec's own OBS scene (created if missing), then switch back"),
+    Feature("preflight_check", "Before a batch, check screen, window, OBS capture and sound end to end"),
 )
 
 _BY_NAME: dict[str, Feature] = {feature.name: feature for feature in REGISTRY}

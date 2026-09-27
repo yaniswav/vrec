@@ -50,6 +50,26 @@ Unattended OBS recording of web videos, one after another.
   vrec immediately retries that same video once, one quality step lower.
 - **Quality forcing**: the player's manifest is intercepted so it only offers the best available
   quality, instead of letting adaptive streaming start low and ramp up.
+- **vrec's own OBS scene** (feature `obs_scene`, `[obs] scene`, default `"vrec"`): by default vrec
+  records from a dedicated scene instead of whatever scene is current in OBS. The first time, it
+  creates that scene with a display capture ("`<scene>` screen", cursor hidden, fitted to the canvas)
+  pointed at the virtual display; if the scene already exists, it's reused as is — only a missing
+  display capture is added, so anything you already set up on it (a crop filter for 360 videos, say)
+  stays. Its own VB-CABLE audio source is added to it too. OBS switches to it for the batch and back to
+  the scene you were on afterwards — also after Ctrl+C, and on the next start if vrec was killed before
+  it could switch back. Your other scenes, and OBS's global settings (resolution, encoder), are never
+  touched.
+- **Pre-flight check** (feature `preflight_check`): right before the first video of every batch, and in
+  `--test` mode, vrec opens a small local test page (served from `http://127.0.0.1`) in the recording
+  Chrome and checks the whole chain end to end: the virtual screen is present; Chrome is on it and
+  fullscreen; OBS actually sees Chrome (the page shows two solid colors in turn, and OBS's capture must
+  show them — if vrec's own display capture is filming another screen, vrec tries the other screens OBS
+  offers it and keeps the one that works); and sound reaches OBS (a 1 s 440 Hz tone sent to CABLE Input
+  must move OBS's meter — normally inaudible, since it's routed to the cable rather than played out
+  loud). It briefly uses the same automatically-revoked microphone permission as `audio_sink` does, for
+  the same reason: finding the right audio output by name. Results print as `[ OK ]`/`[FAIL]`/`[SKIP]`
+  lines; on failure, the menu asks "Record anyway? (y/N)", while `--all`/`--only` stop before recording
+  anything.
 - **Feature toggles** let you turn any of the behavior above off individually if it misbehaves for
   you — see [Features on/off](#features-onoff) below.
 - **`vrec --doctor`** checks your setup (OBS, Chrome, disk space, audio routing, the virtual screen...)
@@ -177,6 +197,7 @@ is optional; a missing file or key falls back to the default shown below.
 | `[obs]` | `audio_source_name` | `Chrome Audio (VB-CABLE)` | Name of the OBS audio input source that carries Chrome's sound; created automatically if missing. |
 | `[obs]` | `path` | (empty) | Path to `obs64.exe`, if vrec can't find it itself (feature `auto_start_obs`). Empty = look in the registry, then the default install location. |
 | `[obs]` | `start_timeout` | `60` | Seconds to wait for OBS's WebSocket server to answer after starting it (feature `auto_start_obs`). |
+| `[obs]` | `scene` | `vrec` | Name of the OBS scene vrec records from (feature `obs_scene`); created automatically, with a display capture, if it doesn't already exist. |
 | `[chrome]` | `debug_port` | `9222` | Remote debugging port Chrome was started with (see `launch_chrome.bat`). |
 | `[chrome]` | `path` | (empty) | Path to `chrome.exe`, if vrec can't find it itself (feature `auto_start_chrome`). Empty = look in the standard install locations, then the registry. |
 | `[chrome]` | `profile` | (empty) | Chrome profile directory used when vrec starts the recording Chrome itself (feature `auto_start_chrome`). Empty = `VREC_CHROME_PROFILE`, then `%LocalAppData%\vrec\chrome-profile` (same as `launch_chrome.bat`). |
@@ -232,6 +253,8 @@ the single-instance lock (`data\vrec.lock`).
 | `audio_sink` | ON | Send only the recorded video's sound to CABLE Input (no Windows mixer setup) |
 | `auto_start_obs` | ON | Start OBS if it isn't open (it stays open afterwards) |
 | `auto_start_chrome` | ON | Start the recording Chrome if it isn't open (it stays open afterwards) |
+| `obs_scene` | ON | Record from vrec's own OBS scene (created if missing), then switch back |
+| `preflight_check` | ON | Before a batch, check screen, window, OBS capture and sound end to end |
 
 ## Output files & statuses
 
@@ -270,6 +293,8 @@ src/vrec/            application source
   recorder.py          recording a single video: fullscreen, quality, OBS start/stop, live checks
   browser.py            Chrome connection (CDP), window placement, per-page audio routing
   obs_control.py        OBS WebSocket control: connect, audio setup, screenshots
+  obs_scene.py           vrec's own OBS scene: create/reuse it, then switch to it and back
+  preflight.py           pre-flight check: local test page, screen/window/capture/sound checks
   launcher.py           starting OBS/Chrome themselves if they aren't already open
   display.py            screens and the virtual-display on/off helper
   doctor.py             `vrec --doctor` checks

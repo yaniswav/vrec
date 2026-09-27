@@ -14,6 +14,107 @@ never starts a recording or changes OBS/Chrome state (beyond, like a normal run,
 OBS WebSocket password the first time it's typed in), so it's safe to run at any time, including while
 a normal run is waiting at its "press Enter to start" prompt.
 
+## Pre-flight check
+
+With the `preflight_check` feature on (the default), vrec runs an end-to-end check right before the
+first video of every batch, and in `--test` mode: it prints "Checking everything before recording...",
+opens a small local test page (served from `http://127.0.0.1`) in the recording Chrome, and runs each
+check in turn, printing one line per check: `[ OK ]`, `[FAIL]`, or `[SKIP]` (not applicable here), a
+detail, and, for a failing check, a `->` hint.
+
+### Virtual screen
+
+- `[FAIL] Virtual screen: not found`
+  -> Turn the virtual display on, or set [display] screen in config.toml.
+
+  No screen matches `[display] screen` (`auto` by default). See
+  [virtual-display.md](virtual-display.md).
+- `[ OK ] Virtual screen: <screen>` — the screen vrec will record from.
+
+### Chrome window
+
+- `[SKIP] Chrome window: no virtual screen to compare with` — the "Virtual screen" check above already
+  failed, so there's nothing to compare the window's position against.
+- `[FAIL] Chrome window: not on <screen>`
+  -> Move it there with Win+Shift+Arrow, or check [display] screen in config.toml.
+- `[FAIL] Chrome window: on <screen> but not fullscreen (<state>)` — the window is on the right screen
+  but isn't fullscreen yet; a normal run or `--test` places and fullscreens it itself right after this
+  check, so seeing this on a stale window usually isn't a real problem.
+- `[ OK ] Chrome window: on <screen>, fullscreen`
+
+### OBS sees Chrome
+
+The test page fills the screen with two solid, unusual colors in turn, and OBS's capture of that
+screen must show each one.
+
+- `[ OK ] OBS sees Chrome: '<capture>' shows the Chrome window`
+- `[ OK ] OBS sees Chrome: '<capture>' now films <monitor>` — vrec's own display capture (feature
+  `obs_scene`) was pointed at the wrong screen; vrec tried the other screens OBS offers for that
+  capture and switched to the one that actually shows Chrome. Nothing to do.
+- `[FAIL] OBS sees Chrome: '<capture>' doesn't show the Chrome window`
+  -> In OBS, point the display capture at the virtual screen, and keep Chrome in front on it.
+
+  With `obs_scene` off, vrec can't retarget your scene's capture itself — point it at the virtual
+  screen by hand (see [setup-windows.md](setup-windows.md#4-obs)).
+
+### Sound reaches OBS
+
+The page plays a 1-second, 440 Hz tone — silent to you if it went through VB-CABLE, since that's routed
+to OBS rather than played out loud — and OBS's audio meter must move.
+
+- `[SKIP] Sound reaches OBS: audio check unavailable` — the audio meter itself isn't available (see
+  "(Audio check unavailable, continuing without it.)" above); there's nothing to check against.
+- `[ OK ] Sound reaches OBS: tone played on <sink>`
+- `[FAIL] Sound reaches OBS: OBS heard nothing`
+  -> Check that the OBS audio source uses CABLE Output (vrec --doctor). (shown with `audio_sink` on)
+  -> Route Chrome to CABLE Input in the Windows volume mixer (audio_sink is off). (shown with
+  `audio_sink` off)
+
+A check that crashes unexpectedly is reported as failed with its own error message instead of stopping
+the batch by itself.
+
+### If something isn't right
+
+In the menu, vrec asks:
+
+> Something isn't right. Record anyway? (y/N)
+
+Answering anything but `y` — and running with `--all`/`--only`, where there's no prompt at all — stops
+the batch before anything is recorded, with:
+
+> Pre-flight check failed: nothing was recorded. Fix the points above, or turn the check off: vrec
+> --disable preflight_check
+
+### Switching to vrec's own scene (feature `obs_scene`)
+
+Printed while vrec creates or reuses its own OBS scene, just before the pre-flight check runs:
+
+- `Created the OBS scene '<scene>' with a display capture '<capture>'.` — first use: the scene didn't
+  exist yet, so vrec created it.
+- `Added a display capture '<capture>' to the OBS scene '<scene>'.` — the scene already existed (for
+  example one you built by hand) but had no display capture, so vrec added just that; anything else
+  already in the scene (a crop filter for 360 videos, say) is left untouched.
+
+Neither message is a problem — recording continues normally. Nothing is printed when the scene already
+had everything it needed.
+
+After the batch — and after Ctrl+C — vrec switches OBS back to the scene you were on:
+
+- `Couldn't switch OBS back to the scene '<scene>': ...` — switching back failed; check that the scene
+  still exists, and switch to it yourself in OBS. The leftover marker file is left in place in this
+  case, so vrec retries the switch itself the next time it starts (see below).
+
+If vrec was killed before it could switch back (crash, forced shutdown, power loss), the next run
+detects the leftover marker file (`data\obs_restore_scene.txt`) and finishes the job:
+
+- `Switched OBS back to the scene '<scene>' left over from an interrupted run.` — expected recovery,
+  not an error; the marker file is then removed.
+- `The scene '<scene>' to switch back to after an interrupted run no longer exists.` — you deleted
+  or renamed that scene meanwhile: nothing to switch back to. Pick your scene in OBS; the marker file
+  is removed.
+- `Couldn't switch OBS back to the scene '<scene>': ...` — same warning as above, this time from the
+  leftover-file recovery. The marker file is left in place so the switch is retried on the next start.
+
 ## Run logs (`data\logs`)
 
 When the `run_logs` feature is on (the default), every run — recording, `--test`, or `--doctor` —

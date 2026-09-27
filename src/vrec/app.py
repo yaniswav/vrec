@@ -18,7 +18,7 @@ from pathlib import Path
 import obsws_python as obs
 from playwright.sync_api import Browser, Page
 
-from vrec import display, history, launcher, menu, obs_control
+from vrec import display, history, launcher, menu, obs_control, obs_scene, preflight
 from vrec.browser import (
     WindowBounds,
     connect_browser,
@@ -69,6 +69,9 @@ class Batch:
     initial_bounds: WindowBounds | None = None
     display_turned_on: bool = False
     virtual_screen: display.Screen | None = None  # the screen this run turned on
+    capture: str = ""  # vrec's display capture source (obs_scene feature)
+    previous_scene: str | None = None  # program scene to switch back to
+    interactive: bool = False
 
 
 def run(
@@ -120,9 +123,11 @@ def _run_locked(
         client=client,
         password=password,
         scene=obs_control.current_scene(client),
+        interactive=interactive,
     )
 
     try:
+        _prepare_scene(batch)
         _prepare_audio(batch)
         _virtual_display_on(batch)
         _start_chrome_if_needed(batch)
@@ -147,6 +152,7 @@ def _run_locked(
 
             _prepare_window(batch)
             try:
+                _preflight(batch)
                 _record_batch(batch, selection)
             finally:
                 _restore_window(batch)
@@ -154,6 +160,7 @@ def _run_locked(
         _handle_keyboard_interrupt(batch)
     finally:
         _cleanup_audio(batch)
+        _restore_scene(batch)
         _virtual_display_off(batch)
 
     return _final_report(batch)
@@ -186,6 +193,7 @@ def _connect_obs(
     state, and check it's idle and up to date."""
     client, password = launcher.ensure_obs(settings, paths, features)
     _restore_leftover_audio(client, paths.obs_restore)
+    _restore_leftover_scene(client, paths.obs_scene_restore)
 
     if client.get_record_status().output_active:
         raise VrecError("An OBS recording is already in progress. Stop it, then restart.")
@@ -250,11 +258,77 @@ def _prepare_audio(batch: Batch) -> None:
         raise VrecError(f"Audio problem: {first_line(e)}") from e
     print(f"\nOBS ready: scene '{batch.scene}', audio captured from '{source_audio}', other sounds muted.")
 
+    if batch.capture:  # vrec's own scene: its audio source must be in it to be recorded
+        obs_scene.ensure_in_scene(batch.client, batch.scene, source_audio)
+
     batch.meter = obs_control.AudioMeter(source_audio)
     batch.listener = obs_control.connect_audio_listener(batch.settings, batch.password, batch.meter)
     if batch.listener is None:
         batch.meter = None
         print("(Audio check unavailable, continuing without it.)")
+
+
+def _prepare_scene(batch: Batch) -> None:
+    """Record from vrec's own OBS scene (feature obs_scene): create what's missing, switch to it."""
+    if not batch.features.enabled("obs_scene"):
+        return
+    assert batch.client is not None
+    name = batch.settings.obs_scene_name
+    setup = obs_scene.ensure_scene(batch.client, name)
+    if setup.created_scene:
+        print(f"Created the OBS scene '{name}' with a display capture '{setup.capture}'.")
+    elif setup.created_capture:
+        print(f"Added a display capture '{setup.capture}' to the OBS scene '{name}'.")
+    # Written before switching, so a killed run still gets its scene back on the next start.
+    batch.paths.obs_scene_restore.write_text(obs_control.current_scene(batch.client), encoding="utf-8")
+    batch.previous_scene = obs_scene.switch_to(batch.client, name)
+    batch.scene, batch.capture = name, setup.capture
+
+
+def _restore_scene(batch: Batch) -> None:
+    """Switch OBS back to the scene the user was on."""
+    if batch.previous_scene is None or batch.client is None:
+        return
+    try:
+        if batch.previous_scene != batch.scene:
+            batch.client.set_current_program_scene(batch.previous_scene)
+        batch.paths.obs_scene_restore.unlink(missing_ok=True)
+    except Exception as e:
+        warn(f"Couldn't switch OBS back to the scene '{batch.previous_scene}': {first_line(e)}")
+
+
+def _preflight(batch: Batch) -> None:
+    """Check the whole chain before recording (feature preflight_check); stop if something's wrong."""
+    if not batch.features.enabled("preflight_check"):
+        return
+    assert batch.browser is not None and batch.page is not None and batch.client is not None
+    screen = batch.virtual_screen or display.pick_screen(
+        display.list_screens(), batch.settings.display_screen
+    )
+    ctx = preflight.Context(
+        page=batch.page,
+        browser=batch.browser,
+        client=batch.client,
+        capture=batch.capture or batch.scene,
+        can_retarget=bool(batch.capture),
+        screen=screen,
+        meter=batch.meter,
+        audio_output=batch.settings.audio_output if batch.features.enabled("audio_sink") else "",
+        audio_level=batch.settings.audio_level,
+    )
+    print("Checking everything before recording...")
+    results = preflight.run_checks(ctx)
+    for result in results:
+        print(result.line())
+    print()
+    if all(r.ok is not False for r in results):
+        return
+    if batch.interactive and menu.ask("Something isn't right. Record anyway? (y/N) ").lower().startswith("y"):
+        return
+    raise VrecError(
+        "Pre-flight check failed: nothing was recorded. Fix the points above, "
+        "or turn the check off: vrec --disable preflight_check"
+    )
 
 
 def _virtual_display_on(batch: Batch) -> None:
@@ -513,6 +587,22 @@ def _restore_leftover_audio(client: obs.ReqClient, restore_file: Path) -> None:
         return
     obs_control.restore_mutes(client, mutes, restore_file)
     print("Restored OBS audio settings left over from an interrupted run.")
+
+
+def _restore_leftover_scene(client: obs.ReqClient, restore_file: Path) -> None:
+    """If a previous run was killed while on vrec's scene, switch OBS back to the user's scene."""
+    if not restore_file.exists():
+        return
+    scene = restore_file.read_text(encoding="utf-8").strip()
+    try:
+        if scene and scene in obs_scene.scene_names(client):
+            client.set_current_program_scene(scene)
+            print(f"Switched OBS back to the scene '{scene}' left over from an interrupted run.")
+        elif scene:
+            warn(f"The scene '{scene}' to switch back to after an interrupted run no longer exists.")
+        restore_file.unlink(missing_ok=True)
+    except Exception as e:
+        warn(f"Couldn't switch OBS back to the scene '{scene}': {first_line(e)}")
 
 
 def _print_diagnostic(result: RecordingResult) -> None:

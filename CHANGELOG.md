@@ -20,6 +20,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `[chrome] profile`, and `[chrome] start_timeout` config keys.
 - `vrec --doctor` reports in advance what these two features would do (`[INFO] ... Not open: vrec will
   start it (...)`) instead of starting anything itself; it stays fully read-only.
+- `obs_scene` feature (on by default, `[obs] scene`, default `"vrec"`): records from vrec's own OBS
+  scene instead of whatever scene is current, creating it with a display capture if it's missing
+  (reusing an existing scene as is otherwise, so a crop filter for 360 videos stays), and adding its
+  own VB-CABLE audio source to it. OBS switches to it for the batch and back afterwards, including
+  after Ctrl+C and on the next start if vrec was killed first. `vrec --doctor`'s display capture check
+  now reports what it will do about vrec's scene.
+- `preflight_check` feature (on by default): right before the first video of a batch, and in `--test`
+  mode, checks the whole chain end to end on a small local test page — virtual screen, Chrome window
+  placement and fullscreen, OBS actually seeing Chrome (retargeting vrec's own display capture if
+  needed), and sound reaching OBS — then either offers to record anyway (menu) or stops the batch
+  before recording anything (`--all`/`--only`) if something's wrong.
 
 ## [0.2.0] - 2026-09-27
 

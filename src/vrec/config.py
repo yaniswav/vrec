@@ -19,6 +19,7 @@ class Settings:
     audio_source_name: str = "Chrome Audio (VB-CABLE)"
     obs_path: str = ""
     obs_start_timeout_s: float = 60
+    obs_scene_name: str = "vrec"
     chrome_port: int = 9222
     chrome_path: str = ""
     chrome_profile: str = ""
@@ -68,6 +69,10 @@ class Paths:
         return self.data_dir / "obs_restore.json"
 
     @property
+    def obs_scene_restore(self) -> Path:
+        return self.data_dir / "obs_restore_scene.txt"
+
+    @property
     def features(self) -> Path:
         return self.data_dir / "features.toml"
 
@@ -80,6 +85,7 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
         "audio_source_name": ("audio_source_name", str),
         "path": ("obs_path", str),
         "start_timeout": ("obs_start_timeout_s", float),
+        "scene": ("obs_scene_name", str),
     },
     "chrome": {
         "debug_port": ("chrome_port", int),

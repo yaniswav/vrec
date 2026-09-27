@@ -16,7 +16,7 @@ from pathlib import Path
 
 import obsws_python as obs
 
-from vrec import display, launcher, obs_control
+from vrec import display, launcher, obs_control, obs_scene
 from vrec.config import Paths, Settings, load_settings
 from vrec.console import first_line
 from vrec.errors import VrecError
@@ -258,10 +258,25 @@ def check_scene_capture(ctx: _Context) -> Check:
     client = ctx.client()
     if client is None:
         return _skip("Display capture source")
-    scene = obs_control.current_scene(client)
+    if ctx.features.enabled("obs_scene"):
+        scene = ctx.settings.obs_scene_name
+        if scene not in obs_scene.scene_names(client):
+            return Check(
+                "info",
+                "Display capture source",
+                detail=f"vrec will create its scene '{scene}' with a display capture on the first run.",
+            )
+    else:
+        scene = obs_control.current_scene(client)
     items = client.get_scene_item_list(scene).scene_items
     if any(item.get("inputKind") == "monitor_capture" for item in items):
         return Check("ok", "Display capture source", detail=f"Found in scene '{scene}'.")
+    if ctx.features.enabled("obs_scene"):
+        return Check(
+            "info",
+            "Display capture source",
+            detail=f"vrec will add a display capture to its scene '{scene}'.",
+        )
     return Check(
         "warn",
         "Display capture source",

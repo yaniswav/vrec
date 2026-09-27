@@ -62,8 +62,15 @@ then in its default install location; set `[obs] path` in `config.toml` if it ca
 [config.example.toml](../config.example.toml)). You can still open OBS yourself first if you prefer.
 
 1. **Tools > WebSocket Server Settings**, check **Enable WebSocket server**.
-2. In your scene, add a **Display Capture** source pointed at the virtual display, with
-   **Capture Cursor** unchecked.
+2. By default, vrec records from its own OBS scene instead of whatever scene is current (feature
+   `obs_scene`, `[obs] scene` = `"vrec"`): it creates that scene itself the first time, with a display
+   capture ("vrec screen", cursor hidden, fitted to the canvas) pointed at the virtual display, and
+   switches OBS to it only for the batch, then back to whatever scene you were on. You don't need to
+   add anything yourself — if the scene already exists (for example because you built it by hand, or
+   added a crop filter for 360 videos, see below), vrec reuses it as is and only adds a display capture
+   if one is missing. Turn `obs_scene` off if you'd rather vrec record straight from whatever scene is
+   current in OBS; in that case, add a **Display Capture** source to that scene yourself, pointed at
+   the virtual display, with **Capture Cursor** unchecked.
 3. **Settings > Video**: base (canvas) resolution **3840x2160**, FPS 60 (or 30).
 4. **Settings > Output**: encoder **NVENC HEVC**, recording quality **not** "Same as stream" (see
    below), format **Hybrid MP4** (or MKV if hybrid MP4 isn't available).
@@ -79,7 +86,8 @@ source, mutes your desktop audio and microphone while recording, and restores ev
 For videos whose image is twice as wide as it is tall:
 
 1. **Settings > Video**: set both base and output resolution to **3840x1920**.
-2. Right-click the Display Capture source > **Filters > "+" > Crop/Pad**: top **120**, bottom **120**.
+2. Right-click the display capture in the `vrec` scene (or in your own scene, with `obs_scene` off) >
+   **Filters > "+" > Crop/Pad**: top **120**, bottom **120**.
 3. Right-click the source > **Transform > Fit to screen**.
 
 Without this, the recorded file has black bars at the top and bottom, and the image looks distorted in

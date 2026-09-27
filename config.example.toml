@@ -19,6 +19,10 @@ audio_source_name = "Chrome Audio (VB-CABLE)"
 path = ""
 # Seconds to wait for OBS's WebSocket server to answer after starting it (feature auto_start_obs).
 start_timeout = 60
+# Name of the OBS scene vrec records from (feature obs_scene, on by default). Created automatically,
+# with a display capture, if it doesn't already exist; reused as is otherwise. Ignored if obs_scene
+# is turned off.
+scene = "vrec"
 
 [chrome]
 # Remote debugging port Chrome was started with (see scripts/windows/launch_chrome.bat).
