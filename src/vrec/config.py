@@ -5,6 +5,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from vrec.errors import VrecError
 
@@ -116,7 +117,10 @@ def load_settings(path: Path | None) -> Settings:
     except tomllib.TOMLDecodeError as e:
         raise VrecError(f"Invalid config file {path}: {e}") from e
 
-    values: dict[str, object] = {}
+    # Any: the dict is assembled dynamically from the schema below (mixed str/int/float
+    # fields), then unpacked into Settings(**values) -- _coerce validates each value against
+    # its expected type at runtime.
+    values: dict[str, Any] = {}
     for section, entries in data.items():
         schema = _SCHEMA.get(section)
         if schema is None:

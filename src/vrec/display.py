@@ -51,46 +51,58 @@ class Screen:
 
 
 def list_screens() -> list[Screen]:
-    """Screens currently attached to the desktop. Empty on non-Windows systems."""
-    if sys.platform != "win32":
-        return []
-    import ctypes
-    from ctypes import wintypes
+    """Screens currently attached to the desktop. Empty on non-Windows systems.
 
-    class MONITORINFOEXW(ctypes.Structure):
-        _fields_ = [
-            ("cbSize", wintypes.DWORD),
-            ("rcMonitor", wintypes.RECT),
-            ("rcWork", wintypes.RECT),
-            ("dwFlags", wintypes.DWORD),
-            ("szDevice", wintypes.WCHAR * 32),
-        ]
+    The body lives entirely under the `sys.platform == "win32"` branch (rather than an early
+    `return []` guard clause) so that mypy, checking under either `--platform win32` or
+    `--platform linux`, statically excludes just the inapplicable branch instead of flagging the
+    other one as unreachable code.
+    """
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
 
-    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
-    screens: list[Screen] = []
+        class MONITORINFOEXW(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD),
+                ("szDevice", wintypes.WCHAR * 32),
+            ]
 
-    def on_monitor(handle, _hdc, _rect, _data):  # noqa: ANN001, ANN202 - ctypes callback
-        info = MONITORINFOEXW()
-        info.cbSize = ctypes.sizeof(info)
-        if user32.GetMonitorInfoW(handle, ctypes.byref(info)):
-            r = info.rcMonitor
-            screens.append(
-                Screen(
-                    name=info.szDevice.removeprefix("\\\\.\\"),
-                    left=r.left,
-                    top=r.top,
-                    width=r.right - r.left,
-                    height=r.bottom - r.top,
-                    primary=bool(info.dwFlags & 1),
+        user32 = ctypes.windll.user32
+        screens: list[Screen] = []
+
+        def on_monitor(
+            handle: wintypes.HMONITOR,
+            _hdc: wintypes.HDC,
+            _rect: ctypes._Pointer[wintypes.RECT],
+            _data: wintypes.LPARAM,
+        ) -> int:
+            info = MONITORINFOEXW()
+            info.cbSize = ctypes.sizeof(info)
+            if user32.GetMonitorInfoW(handle, ctypes.byref(info)):
+                r = info.rcMonitor
+                screens.append(
+                    Screen(
+                        name=info.szDevice.removeprefix("\\\\.\\"),
+                        left=r.left,
+                        top=r.top,
+                        width=r.right - r.left,
+                        height=r.bottom - r.top,
+                        primary=bool(info.dwFlags & 1),
+                    )
                 )
-            )
-        return 1
+            return 1
 
-    callback_type = ctypes.WINFUNCTYPE(
-        ctypes.c_int, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM
-    )
-    user32.EnumDisplayMonitors(None, None, callback_type(on_monitor), 0)
-    return screens
+        callback_type = ctypes.WINFUNCTYPE(
+            ctypes.c_int, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM
+        )
+        user32.EnumDisplayMonitors(None, None, callback_type(on_monitor), 0)
+        return screens
+    else:
+        return []
 
 
 def pick_screen(screens: Sequence[Screen], wanted: str = "auto") -> Screen | None:
@@ -208,14 +220,15 @@ def virtual_display_enabled(run: Runner = _run) -> bool | None:
 
 
 def is_admin() -> bool:
-    if sys.platform != "win32":
-        return os.geteuid() == 0 if hasattr(os, "geteuid") else False
-    import ctypes
+    if sys.platform == "win32":
+        import ctypes
 
-    try:
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
-    except OSError:
-        return False
+        try:
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except OSError:
+            return False
+    else:
+        return os.geteuid() == 0 if hasattr(os, "geteuid") else False
 
 
 def _task_command(script: Path, state: str) -> str:
@@ -226,6 +239,14 @@ def install_helper(device_pattern: str, run: Runner = _run) -> Path:
     """Write the helper script and register the two elevated on-demand tasks (needs admin)."""
     if sys.platform != "win32":
         raise VrecError("Turning the virtual display on/off is only supported on Windows.")
+    else:
+        # Delegated to a helper with no `sys.platform` check of its own: mypy narrows the
+        # branch above per --platform, and would otherwise consider everything after it
+        # (in this same function) unreachable when checking under a non-Windows platform.
+        return _install_helper(device_pattern, run)
+
+
+def _install_helper(device_pattern: str, run: Runner) -> Path:
     if not is_admin():
         raise VrecError(
             "This needs administrator rights once: open a terminal with 'Run as administrator' and run "

@@ -136,17 +136,21 @@ def capture(data_dir: Path, argv: list[str], features: FeatureSet) -> Iterator[R
         stdout_tee = _Tee(orig_stdout, write_line)
         stderr_tee = _Tee(orig_stderr, write_line)
 
-        def logged_input(prompt: str = "") -> str:
+        def logged_input(prompt: object = "") -> str:
+            # object, not str: matches builtins.input's own signature (it str()s whatever
+            # it's given), which is what lets this stand in for it below.
+            #
             # The prompt is written here (once, so it's logged) rather than passed to
             # orig_input(): builtins.input() only writes it itself when sys.stdout is
             # still the *original* stdout object, which by now it no longer is.
-            stdout_tee.write(prompt)
+            text = str(prompt)
+            stdout_tee.write(text)
             try:
                 answer = orig_input()
             except EOFError:
                 stdout_tee.note("<EOF>")
                 raise
-            stdout_tee.note("***" if _is_password_prompt(prompt) else answer)
+            stdout_tee.note("***" if _is_password_prompt(text) else answer)
             return answer
 
         sys.stdout, sys.stderr, builtins.input = stdout_tee, stderr_tee, logged_input

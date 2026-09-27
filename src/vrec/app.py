@@ -297,6 +297,8 @@ def _place_window(batch: Batch) -> None:
             "Check [display] screen in config.toml, or move it by hand (Win+Shift+Arrow)."
         )
         return
+    # Set by `run()` before any step that touches the window is called.
+    assert batch.browser is not None and batch.page is not None
     try:
         batch.initial_bounds = get_window_bounds(batch.browser, batch.page)
         if move_window_to(batch.browser, batch.page, screen):
@@ -310,6 +312,8 @@ def _place_window(batch: Batch) -> None:
 def _prepare_window(batch: Batch) -> None:
     """Put the Chrome window on the virtual screen, then fullscreen it, before recording starts."""
     _place_window(batch)
+    # Set by `run()` before any step that touches the window is called.
+    assert batch.browser is not None and batch.page is not None
     try:
         batch.initial_window_state = window_state(batch.browser, batch.page, "fullscreen")
     except Exception as e:
@@ -318,6 +322,8 @@ def _prepare_window(batch: Batch) -> None:
 
 def _restore_window(batch: Batch) -> None:
     """Put the Chrome window back where and how it was before `_prepare_window`."""
+    # Set by `run()` before any step that touches the window is called.
+    assert batch.browser is not None and batch.page is not None
     if batch.initial_bounds:
         with contextlib.suppress(Exception):
             set_window_bounds(batch.browser, batch.page, batch.initial_bounds)
@@ -329,6 +335,8 @@ def _restore_window(batch: Batch) -> None:
 
 
 def _chrome_alive(batch: Batch) -> bool:
+    # Set by `run()` before any step that checks Chrome's liveness is called.
+    assert batch.browser is not None and batch.page is not None
     return not batch.page.is_closed() and batch.browser.is_connected()
 
 
@@ -362,6 +370,8 @@ def _record_batch(
     obs_alive: Callable[[obs.ReqClient], bool] = _obs_alive,
 ) -> None:
     """Record every video in `selection`, in order, stopping early on a circuit-breaker trip."""
+    # Set by `run()` before the batch loop starts.
+    assert batch.page is not None
     error_streak = 0
     for i, (url, title) in enumerate(selection, 1):
         batch.current_title = history.display_title(batch.videos_history, url, title)

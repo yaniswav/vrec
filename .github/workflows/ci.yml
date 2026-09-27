@@ -28,6 +28,16 @@ jobs:
           node-version: "22"
       - run: node .github/scripts/check-js.js
 
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: mypy
+
   build:
     runs-on: ubuntu-latest
     steps:

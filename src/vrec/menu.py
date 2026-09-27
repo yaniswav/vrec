@@ -26,7 +26,7 @@ def parse_numbers(text: str, maximum: int) -> list[int]:
         rng = re.fullmatch(r"(\d+)-(\d+)", chunk)
         if rng:
             a, b = int(rng[1]), int(rng[2])
-            values = range(a, b + 1) if a <= b else range(a, b - 1, -1)
+            values: list[int] = list(range(a, b + 1)) if a <= b else list(range(a, b - 1, -1))
         elif chunk.isdigit():
             values = [int(chunk)]
         else:
@@ -53,13 +53,13 @@ def choose_numbers(question: str, maximum: int) -> list[int]:
 def show_list(videos: list[tuple[str, str | None]], videos_history: history.Videos) -> None:
     print("\n===== YOUR VIDEOS (videos.txt) =====")
     for i, (url, title) in enumerate(videos, 1):
-        known = videos_history.get(url_key(url)) or {}
-        tag = history.label(known.get("status"))
+        known = videos_history.get(url_key(url))
+        tag = history.label(known["status"] if known else None)
         info = []
-        if known.get("date"):
+        if known and known.get("date"):
             _, month, day = known["date"][:10].split("-")
             info.append(f"{day}/{month}")
-        if known.get("detail"):
+        if known and known.get("detail"):
             info.append(known["detail"])
         suffix = f"   ({', '.join(info)})" if info else ""
         print(f"{i:3d}. [{tag:<8}] {history.display_title(videos_history, url, title)[:60]}{suffix}")

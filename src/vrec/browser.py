@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from functools import cache
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from playwright.sync_api import Browser, CDPSession, Page, sync_playwright
@@ -53,7 +53,8 @@ def window_state(browser: Browser, page: Page, state: str | None = None) -> str:
     target_id = page.context.new_cdp_session(page).send("Target.getTargetInfo")["targetInfo"]["targetId"]
     session = browser.new_browser_cdp_session()
     window = session.send("Browser.getWindowForTarget", {"targetId": target_id})
-    previous = window["bounds"].get("windowState", "normal")
+    # CDPSession.send() returns an untyped JSON dict (Any); the CDP protocol guarantees this field.
+    previous = cast(str, window["bounds"].get("windowState", "normal"))
     if state and state != previous:
         if previous != "normal":  # Chrome prefers going through "normal" between two states
             session.send(

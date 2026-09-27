@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Protocol, TypedDict
 
 from vrec.console import human_duration
 
@@ -36,11 +36,23 @@ class StopReason(StrEnum):
     TOO_LONG = "took too long"
 
 
+class PlayerState(TypedDict):
+    """The video element's state, as reported by js/state.js."""
+
+    ended: bool
+    t: float
+    d: float
+    paused: bool
+    w: int
+    h: int
+    buffer: float
+
+
 class Player(Protocol):
     """The video in the page."""
 
-    def state(self) -> dict[str, Any] | None:
-        """{ended, t, d, paused, w, h, buffer}, or None if the video left the page."""
+    def state(self) -> PlayerState | None:
+        """The video's current state, or None if it left the page."""
 
     def play(self) -> None: ...
 
