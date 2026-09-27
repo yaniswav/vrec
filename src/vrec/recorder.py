@@ -31,11 +31,12 @@ class StopReason(StrEnum):
     VIDEO_GONE = "video removed from page"
     STALLED = "loading stalled"
     BLACK = "black image"
+    TOO_LONG = "took too long"
 
 
 # Reasons that mean the recording is missing part of the video, not just unverified:
 # never fully recorded, so it should be retried rather than merely reviewed.
-INCOMPLETE_REASONS = frozenset({StopReason.STALLED, StopReason.VIDEO_GONE})
+INCOMPLETE_REASONS = frozenset({StopReason.STALLED, StopReason.VIDEO_GONE, StopReason.TOO_LONG})
 
 
 @dataclass
@@ -113,10 +114,16 @@ def record_one(
     start = time.time()
     if test_mode:
         limit = settings.test_duration_s
+        wall_base = settings.test_duration_s
     elif duration and math.isfinite(duration):
         limit = duration + 120
+        wall_base = duration * settings.max_wall_factor if duration > 0 else 4 * 3600
     else:
         limit = 4 * 3600
+        wall_base = 4 * 3600
+    # Hard safety cap, independent of the checks above: stop no matter what once this
+    # much wall-clock time has passed, even if the recording is paused for buffering.
+    wall_limit = start + wall_base + settings.max_wall_extra_s
     last_t, last_progress = -1.0, time.time()
     audio_warned = stall_warned = quality_warned = False
     resumes = 0
@@ -136,6 +143,10 @@ def record_one(
             break
         if elapsed > limit:
             result.reason = StopReason.TEST_DONE.value if test_mode else StopReason.TIME_LIMIT.value
+            break
+        if now >= wall_limit:
+            # Stops even mid-buffering: OBS can stop a paused recording just fine.
+            result.reason = StopReason.TOO_LONG.value
             break
 
         video_duration = state["d"]

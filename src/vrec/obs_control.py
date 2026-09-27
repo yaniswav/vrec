@@ -5,8 +5,10 @@ from __future__ import annotations
 import base64
 import contextlib
 import io
+import json
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import obsws_python as obs
@@ -88,10 +90,19 @@ def current_scene(client: obs.ReqClient) -> str:
     return getattr(r, "scene_name", None) or r.current_program_scene_name
 
 
-def prepare_audio(client: obs.ReqClient, scene: str, settings: Settings) -> tuple[str, dict[str, bool]]:
+def prepare_audio(
+    client: obs.ReqClient,
+    scene: str,
+    settings: Settings,
+    mutes: dict[str, bool],
+    restore_file: Path,
+) -> str:
     """Find or create the audio source routed to VB-CABLE, and mute every other sound.
 
-    Returns (source name, mute states to restore once done).
+    `mutes` is filled with the mute state of every source this touches -- read *before*
+    anything is changed -- and saved to `restore_file` before the first mute call, so a
+    crash partway through still leaves enough on disk to undo what was already done.
+    Returns the source name.
     """
     inputs = client.get_input_list(_AUDIO_SOURCE_KIND).inputs
     names = [i["inputName"] for i in inputs]
@@ -121,24 +132,46 @@ def prepare_audio(client: obs.ReqClient, scene: str, settings: Settings) -> tupl
             created = True
         source = settings.audio_source_name
 
-    to_restore = {source: True if created else client.get_input_mute(source).input_muted}
+    # Read every current mute state up front and save it, before changing anything.
+    other_wasapi = [
+        entry["inputName"]
+        for entry in client.get_input_list().inputs
+        if entry.get("inputKind", "").startswith("wasapi") and entry["inputName"] != source
+    ]
+    mutes[source] = True if created else client.get_input_mute(source).input_muted
+    for name in other_wasapi:
+        mutes[name] = client.get_input_mute(name).input_muted
+    _save_restore_file(restore_file, mutes)
+
     client.set_input_mute(source, False)
     client.set_input_audio_monitor_type(source, "OBS_MONITORING_TYPE_NONE")
-
     # Mute desktop audio, the microphone, and every other audio capture source.
-    for entry in client.get_input_list().inputs:
-        name = entry["inputName"]
-        if entry.get("inputKind", "").startswith("wasapi") and name != source:
-            to_restore[name] = client.get_input_mute(name).input_muted
-            client.set_input_mute(name, True)
-    return source, to_restore
+    for name in other_wasapi:
+        client.set_input_mute(name, True)
+    return source
 
 
-def restore_mutes(client: obs.ReqClient, mutes: dict[str, bool]) -> None:
-    """Put the mute state of every affected source back to what it was."""
+def restore_mutes(client: obs.ReqClient, mutes: dict[str, bool], restore_file: Path) -> None:
+    """Put the mute state of every affected source back to what it was.
+
+    Deletes `restore_file` only once every source was restored; otherwise it is left in
+    place so a later run can pick up where this one left off.
+    """
+    ok = True
     for name, was_muted in mutes.items():
-        with contextlib.suppress(Exception):
+        try:
             client.set_input_mute(name, was_muted)
+        except Exception:
+            ok = False
+    if ok:
+        with contextlib.suppress(OSError):
+            restore_file.unlink()
+
+
+def _save_restore_file(path: Path, mutes: dict[str, bool]) -> None:
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(mutes), encoding="utf-8", newline="\n")
+    tmp.replace(path)
 
 
 def is_black_frame(client: obs.ReqClient, scene: str, settings: Settings) -> bool | None:

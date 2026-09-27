@@ -29,6 +29,12 @@ tail = 2
 fullscreen_settle = 2
 # Duration recorded in --test mode, in seconds.
 test_duration = 30
+# Hard safety cap: give up on a video after roughly (its duration x this
+# factor) seconds, in case playback stalls or runs far longer than expected.
+max_wall_factor = 3
+# Extra seconds added on top of that cap (also used when the duration, or the
+# test duration, is unknown).
+max_wall_extra = 600
 
 [checks]
 # Maximum average brightness (0-255) below which a frame is considered "black".

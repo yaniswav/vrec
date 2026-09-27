@@ -27,6 +27,8 @@ class Settings:
     pause_below_s: float = 2
     resume_at_s: float = 10
     max_stall_s: float = 300
+    max_wall_factor: float = 3
+    max_wall_extra_s: float = 600
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,10 @@ class Paths:
     def lock(self) -> Path:
         return self.data_dir / "vrec.lock"
 
+    @property
+    def obs_restore(self) -> Path:
+        return self.data_dir / "obs_restore.json"
+
 
 # Maps [toml section][toml key] -> (Settings field name, expected type).
 _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
@@ -68,6 +74,8 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
         "tail": ("tail_s", float),
         "fullscreen_settle": ("fullscreen_settle_s", float),
         "test_duration": ("test_duration_s", float),
+        "max_wall_factor": ("max_wall_factor", float),
+        "max_wall_extra": ("max_wall_extra_s", float),
     },
     "checks": {
         "black_level": ("black_level", int),
