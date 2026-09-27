@@ -32,13 +32,62 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="wait for Enter before closing (used by the .bat files)",
     )
+    parser.add_argument(
+        "--features", action="store_true", help="show which optional features are on or off, then exit"
+    )
+    parser.add_argument(
+        "--enable", nargs="+", metavar="NAME", default=None, help="turn one or more features on"
+    )
+    parser.add_argument(
+        "--disable", nargs="+", metavar="NAME", default=None, help="turn one or more features off"
+    )
     parser.add_argument("--version", action="version", version=f"vrec {__version__}")
     return parser
+
+
+def _run_features(args: argparse.Namespace, data_dir: Path) -> int:
+    """Handle --features/--enable/--disable: no OBS/Chrome, no instance lock."""
+    from vrec.config import Paths
+    from vrec.errors import VrecError
+    from vrec.features import LEGEND, feature_names, load_features, render_lines, save_features
+
+    paths = Paths(data_dir=data_dir, config=data_dir / "config.toml")
+
+    try:
+        features, warnings = load_features(paths.features)
+    except VrecError as e:
+        print(str(e))
+        return 1
+    for message in warnings:
+        print(message)
+
+    names = [*(args.enable or []), *(args.disable or [])]
+    unknown = [name for name in names if name not in feature_names()]
+    if unknown:
+        print(f"Unknown feature: {', '.join(unknown)}")
+        print(f"Valid names: {', '.join(feature_names())}")
+        return 1
+
+    if args.enable or args.disable:
+        for name in args.enable or []:
+            features.set(name, True)
+        for name in args.disable or []:
+            features.set(name, False)
+        save_features(paths.features, features)
+
+    for line in render_lines(features):
+        print(line)
+    print(LEGEND)
+    return 0
 
 
 def _run(args: argparse.Namespace) -> int:
     data_dir = args.data_dir or Path(os.environ.get("VREC_DATA_DIR", "data"))
     data_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.features or args.enable or args.disable:
+        return _run_features(args, data_dir)
+
     config_path = args.config or (data_dir / "config.toml")
 
     try:
