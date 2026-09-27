@@ -1,12 +1,22 @@
-"""Top-level orchestration: read the playlist, drive the menu, record the videos."""
+"""Top-level orchestration: read the playlist, drive the menu, record the videos.
+
+The batch run is split into small steps threaded through a `Batch`, so each step can be
+tested with fakes instead of a live Chrome/OBS connection: `record` and the two health
+probes (`chrome_alive`, `obs_alive`) are parameters of `_record_batch` for exactly that
+reason. `_prepare_window`/`_restore_window` are the seam where window placement and
+virtual-display handling will hook in later; for now they just keep the fullscreen logic.
+"""
 
 from __future__ import annotations
 
 import contextlib
 import json
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import obsws_python as obs
+from playwright.sync_api import Browser, Page
 
 from vrec import history, menu, obs_control
 from vrec.browser import connect_browser, window_state
@@ -25,6 +35,31 @@ from vrec.recorder import (
     status_text,
 )
 
+RecordFn = Callable[..., RecordingResult]
+Video = tuple[str, str | None]
+
+
+@dataclass
+class Batch:
+    """Everything one batch run threads through its steps."""
+
+    paths: Paths
+    settings: Settings
+    features: FeatureSet
+    test_mode: bool
+    videos_history: history.Videos = field(default_factory=dict)
+    client: obs.ReqClient | None = None
+    password: str = ""
+    scene: str = ""
+    meter: obs_control.AudioMeter | None = None
+    mutes: dict[str, bool] = field(default_factory=dict)
+    listener: obs.EventClient | None = None
+    browser: Browser | None = None
+    page: Page | None = None
+    results: list[RecordingResult] = field(default_factory=list)
+    current_title: str = ""
+    initial_window_state: str | None = None
+
 
 def run(data_dir: Path, config_path: Path, test_mode: bool) -> int:
     paths = Paths(data_dir=data_dir, config=config_path)
@@ -41,6 +76,61 @@ def run(data_dir: Path, config_path: Path, test_mode: bool) -> int:
 
 
 def _run_locked(paths: Paths, settings: Settings, features: FeatureSet, test_mode: bool) -> int:
+    videos, videos_history = _load_inputs(paths)
+    client, password = _connect_obs(paths, settings, videos, videos_history)
+
+    selection, interactive = _choose_selection(videos, videos_history, paths, settings, features, test_mode)
+    if not selection:
+        return 0
+
+    batch = Batch(
+        paths=paths,
+        settings=settings,
+        features=features,
+        test_mode=test_mode,
+        videos_history=videos_history,
+        client=client,
+        password=password,
+        scene=obs_control.current_scene(client),
+    )
+
+    try:
+        _prepare_audio(batch)
+        with connect_browser(
+            settings.chrome_port,
+            quality_filter=features.enabled("quality_filter"),
+            audio_sink=features.enabled("audio_sink"),
+        ) as (browser, page):
+            batch.browser = browser
+            batch.page = page
+            if interactive:
+                menu.ask(
+                    f"\n{len(selection)} video(s) to record. Check that the Chrome window is on the "
+                    "virtual screen, then press Enter to start..."
+                )
+                print()
+
+            if client.get_record_status().output_active:
+                raise VrecError("An OBS recording started meanwhile. Stop it, then restart.")
+
+            _prepare_window(batch)
+            try:
+                _record_batch(batch, selection)
+            finally:
+                _restore_window(batch)
+    except KeyboardInterrupt:
+        _handle_keyboard_interrupt(batch)
+    finally:
+        _cleanup_audio(batch)
+
+    return _final_report(batch)
+
+
+# ---------- Steps ----------
+
+
+def _load_inputs(paths: Paths) -> tuple[list[Video], history.Videos]:
+    """Read videos.txt and history.json."""
     if not paths.videos.exists():
         raise VrecError(
             f"File not found: {paths.videos}\nCopy videos.example.txt to {paths.videos} and add your links."
@@ -49,7 +139,13 @@ def _run_locked(paths: Paths, settings: Settings, features: FeatureSet, test_mod
     if not videos:
         raise VrecError(f"{paths.videos.name} contains no links.")
     videos_history = history.load(paths.history)
+    return videos, videos_history
 
+
+def _connect_obs(
+    paths: Paths, settings: Settings, videos: list[Video], videos_history: history.Videos
+) -> tuple[obs.ReqClient, str]:
+    """Connect to OBS, restore any leftover audio state, and check it's idle and up to date."""
     client, password = obs_control.connect(settings, paths)
     _restore_leftover_audio(client, paths.obs_restore)
 
@@ -60,158 +156,220 @@ def _run_locked(paths: Paths, settings: Settings, features: FeatureSet, test_mod
     except Exception:
         record_dir = None
     history.adopt_existing_files(videos, videos_history, record_dir, paths.history)
+    return client, password
 
+
+def _choose_selection(
+    videos: list[Video],
+    videos_history: history.Videos,
+    paths: Paths,
+    settings: Settings,
+    features: FeatureSet,
+    test_mode: bool,
+) -> tuple[list[Video], bool]:
+    """Pick which videos to record, via the interactive menu.
+
+    Returns (selection, interactive): `interactive` is always True here -- it exists so
+    the caller can skip the "press Enter to start" confirmation for a non-interactive
+    selection (added by a later change).
+    """
     if test_mode:
         print(f"\nTEST MODE: {settings.test_duration_s:.0f} s of one video, to check your settings.")
-        selection = menu.choose_test_video(videos, videos_history)
-    else:
-        selection = menu.main_menu(videos, videos_history, paths.history, features, paths.features)
-    if not selection:
-        return 0
+        return menu.choose_test_video(videos, videos_history), True
+    return menu.main_menu(videos, videos_history, paths.history, features, paths.features), True
 
-    scene = obs_control.current_scene(client)
-    mutes: dict[str, bool] = {}
-    listener = None
-    meter = None
-    results: list[RecordingResult] = []
-    current_title = ""
+
+def _prepare_audio(batch: Batch) -> None:
+    """Route Chrome's audio through OBS and mute everything else, unless obs_audio_routing is off."""
+    if not batch.features.enabled("obs_audio_routing"):
+        print("\n(obs_audio_routing is off: OBS audio left as is, audio check disabled.)")
+        return
+
     try:
-        try:
-            source_audio = obs_control.prepare_audio(client, scene, settings, mutes, paths.obs_restore)
-        except Exception as e:
-            raise VrecError(f"Audio problem: {first_line(e)}") from e
-        print(f"\nOBS ready: scene '{scene}', audio captured from '{source_audio}', other sounds muted.")
+        source_audio = obs_control.prepare_audio(
+            batch.client, batch.scene, batch.settings, batch.mutes, batch.paths.obs_restore
+        )
+    except Exception as e:
+        raise VrecError(f"Audio problem: {first_line(e)}") from e
+    print(f"\nOBS ready: scene '{batch.scene}', audio captured from '{source_audio}', other sounds muted.")
 
-        meter = obs_control.AudioMeter(source_audio)
-        listener = obs_control.connect_audio_listener(settings, password, meter)
-        if listener is None:
-            meter = None
-            print("(Audio check unavailable, continuing without it.)")
+    batch.meter = obs_control.AudioMeter(source_audio)
+    batch.listener = obs_control.connect_audio_listener(batch.settings, batch.password, batch.meter)
+    if batch.listener is None:
+        batch.meter = None
+        print("(Audio check unavailable, continuing without it.)")
 
-        with connect_browser(settings.chrome_port, quality_filter=features.enabled("quality_filter")) as (
-            browser,
-            page,
-        ):
-            menu.ask(
-                f"\n{len(selection)} video(s) to record. Check that the Chrome window is on the "
-                "virtual screen, then press Enter to start..."
-            )
-            print()
 
-            if client.get_record_status().output_active:
-                raise VrecError("An OBS recording started meanwhile. Stop it, then restart.")
+def _prepare_window(batch: Batch) -> None:
+    """Fullscreen the Chrome window before recording starts.
 
-            initial_state = None
-            try:
-                initial_state = window_state(browser, page, "fullscreen")
-            except Exception as e:
-                warn(f"Couldn't fullscreen Chrome: {first_line(e)}")
+    Hook point: window placement / virtual display handling will be added here later.
+    """
+    try:
+        batch.initial_window_state = window_state(batch.browser, batch.page, "fullscreen")
+    except Exception as e:
+        warn(f"Couldn't fullscreen Chrome: {first_line(e)}")
 
-            try:
-                error_streak = 0
-                for i, (url, title) in enumerate(selection, 1):
-                    current_title = history.display_title(videos_history, url, title)
-                    had_error = False
-                    try:
-                        result = record_one(
-                            page,
-                            client,
-                            meter,
-                            scene,
-                            settings,
-                            features,
-                            i,
-                            len(selection),
-                            url,
-                            title,
-                            test_mode,
-                            settings.max_height,
-                        )
-                        retry_cap = lower_quality_retry_cap(result, test_mode)
-                        if retry_cap:
-                            print(f"   -> {status_text(result)}")
-                            print(f"   Retrying once below {result.target_height}p...\n")
-                            result = record_one(
-                                page,
-                                client,
-                                meter,
-                                scene,
-                                settings,
-                                features,
-                                i,
-                                len(selection),
-                                url,
-                                title,
-                                test_mode,
-                                retry_cap,
-                            )
-                    except Exception as e:
-                        had_error = True
-                        path = obs_control.stop_if_recording(client)
-                        warn(f"ERROR: {first_line(e)}")
-                        result = RecordingResult(
-                            number=i, title=current_title, reason=f"ERROR: {first_line(e)}"
-                        )
-                        if path:
-                            result.file = rename_recording(path, f"{INTERRUPTED_PREFIX} - {current_title}")
-                            print(f"   Interrupted recording saved as {result.file.name}")
 
-                    results.append(result)
-                    if not test_mode:
-                        status, detail = history_status(result)
-                        history.record(
-                            paths.history,
-                            videos_history,
-                            url,
-                            result.title or current_title,
-                            status,
-                            detail,
-                            result.file,
-                            result.quality,
-                        )
-                    print(f"   -> {status_text(result)}\n")
+def _restore_window(batch: Batch) -> None:
+    """Put the Chrome window back the way it was before `_prepare_window`.
 
-                    if had_error:
-                        error_streak += 1
-                        chrome_alive = not page.is_closed() and browser.is_connected()
-                        obs_alive = _obs_alive(client)
-                        if not chrome_alive or not obs_alive:
-                            what = "Chrome" if not chrome_alive else "OBS"
-                            print(
-                                f"Lost connection to {what}. Batch stopped; "
-                                "the remaining videos are untouched."
-                            )
-                            break
-                        if error_streak >= 3:
-                            print("3 errors in a row: batch stopped.")
-                            break
-                    else:
-                        error_streak = 0
+    Hook point: window placement / virtual display handling will be added here later.
+    """
+    state = batch.initial_window_state
+    if state and state != "fullscreen":
+        with contextlib.suppress(Exception):
+            window_state(batch.browser, batch.page, state)
 
-                    page.wait_for_timeout(3000)
-            finally:
-                if initial_state and initial_state != "fullscreen":
-                    with contextlib.suppress(Exception):
-                        window_state(browser, page, initial_state)
 
-    except KeyboardInterrupt:
-        print("\nStop requested. The current video is not counted as done.")
-        path = obs_control.stop_if_recording(client)
-        if path and current_title:
-            renamed = rename_recording(path, f"{INTERRUPTED_PREFIX} - {current_title}")
-            print(f"   Interrupted recording saved as {renamed.name}")
-    finally:
-        obs_control.restore_mutes(client, mutes, paths.obs_restore)
-        if listener:
-            with contextlib.suppress(Exception):
-                listener.disconnect()
+def _chrome_alive(batch: Batch) -> bool:
+    return not batch.page.is_closed() and batch.browser.is_connected()
 
-    if not results:
+
+def _obs_alive(client: obs.ReqClient) -> bool:
+    """Whether the OBS WebSocket connection is still responding."""
+    try:
+        client.get_version()
+        return True
+    except Exception:
+        return False
+
+
+def _connection_lost(
+    batch: Batch, chrome_alive: Callable[[Batch], bool], obs_alive: Callable[[obs.ReqClient], bool]
+) -> bool:
+    """Whether Chrome or OBS is gone -- and if so, print why the batch is stopping."""
+    alive_chrome = chrome_alive(batch)
+    alive_obs = obs_alive(batch.client)
+    if not alive_chrome or not alive_obs:
+        what = "Chrome" if not alive_chrome else "OBS"
+        print(f"Lost connection to {what}. Batch stopped; the remaining videos are untouched.")
+        return True
+    return False
+
+
+def _record_batch(
+    batch: Batch,
+    selection: list[Video],
+    record: RecordFn = record_one,
+    chrome_alive: Callable[[Batch], bool] = _chrome_alive,
+    obs_alive: Callable[[obs.ReqClient], bool] = _obs_alive,
+) -> None:
+    """Record every video in `selection`, in order, stopping early on a circuit-breaker trip."""
+    error_streak = 0
+    for i, (url, title) in enumerate(selection, 1):
+        batch.current_title = history.display_title(batch.videos_history, url, title)
+        result, had_error = _record_one_with_retry(batch, i, len(selection), url, title, record)
+        batch.results.append(result)
+        if not batch.test_mode:
+            _record_in_history(batch, url, result)
+        print(f"   -> {status_text(result)}\n")
+
+        if had_error:
+            error_streak += 1
+            if batch.features.enabled("circuit_breaker"):
+                if _connection_lost(batch, chrome_alive, obs_alive):
+                    break
+                if error_streak >= 3:
+                    print("3 errors in a row: batch stopped.")
+                    break
+        else:
+            error_streak = 0
+
+        batch.page.wait_for_timeout(3000)
+
+
+def _record_one_with_retry(
+    batch: Batch, number: int, total: int, url: str, title: str | None, record: RecordFn
+) -> tuple[RecordingResult, bool]:
+    """Record one video, retrying once at a lower quality if it stalled (quality_retry)."""
+    try:
+        result = record(
+            batch.page,
+            batch.client,
+            batch.meter,
+            batch.scene,
+            batch.settings,
+            batch.features,
+            number,
+            total,
+            url,
+            title,
+            batch.test_mode,
+            batch.settings.max_height,
+        )
+        if batch.features.enabled("quality_retry"):
+            retry_cap = lower_quality_retry_cap(result, batch.test_mode)
+            if retry_cap:
+                print(f"   -> {status_text(result)}")
+                print(f"   Retrying once below {result.target_height}p...\n")
+                result = record(
+                    batch.page,
+                    batch.client,
+                    batch.meter,
+                    batch.scene,
+                    batch.settings,
+                    batch.features,
+                    number,
+                    total,
+                    url,
+                    title,
+                    batch.test_mode,
+                    retry_cap,
+                )
+        return result, False
+    except Exception as e:
+        return _handle_failed_video(batch, number, e), True
+
+
+def _handle_failed_video(batch: Batch, number: int, error: Exception) -> RecordingResult:
+    """Stop OBS if it was recording, rename the leftover file, and build the failure result."""
+    path = obs_control.stop_if_recording(batch.client)
+    warn(f"ERROR: {first_line(error)}")
+    result = RecordingResult(number=number, title=batch.current_title, reason=f"ERROR: {first_line(error)}")
+    if path:
+        result.file = rename_recording(path, f"{INTERRUPTED_PREFIX} - {batch.current_title}")
+        print(f"   Interrupted recording saved as {result.file.name}")
+    return result
+
+
+def _record_in_history(batch: Batch, url: str, result: RecordingResult) -> None:
+    status, detail = history_status(result)
+    history.record(
+        batch.paths.history,
+        batch.videos_history,
+        url,
+        result.title or batch.current_title,
+        status,
+        detail,
+        result.file,
+        result.quality,
+    )
+
+
+def _handle_keyboard_interrupt(batch: Batch) -> None:
+    print("\nStop requested. The current video is not counted as done.")
+    path = obs_control.stop_if_recording(batch.client)
+    if path and batch.current_title:
+        renamed = rename_recording(path, f"{INTERRUPTED_PREFIX} - {batch.current_title}")
+        print(f"   Interrupted recording saved as {renamed.name}")
+
+
+def _cleanup_audio(batch: Batch) -> None:
+    if batch.features.enabled("obs_audio_routing"):
+        obs_control.restore_mutes(batch.client, batch.mutes, batch.paths.obs_restore)
+    if batch.listener:
+        with contextlib.suppress(Exception):
+            batch.listener.disconnect()
+
+
+def _final_report(batch: Batch) -> int:
+    if not batch.results:
         return 0
-    if test_mode:
-        _print_diagnostic(results[0])
+    if batch.test_mode:
+        _print_diagnostic(batch.results[0])
     else:
-        _print_summary(results, paths.history)
+        _print_summary(batch.results, batch.paths.history)
     return 0
 
 
@@ -228,15 +386,6 @@ def _restore_leftover_audio(client: obs.ReqClient, restore_file: Path) -> None:
         return
     obs_control.restore_mutes(client, mutes, restore_file)
     print("Restored OBS audio settings left over from an interrupted run.")
-
-
-def _obs_alive(client: obs.ReqClient) -> bool:
-    """Whether the OBS WebSocket connection is still responding."""
-    try:
-        client.get_version()
-        return True
-    except Exception:
-        return False
 
 
 def _print_diagnostic(result: RecordingResult) -> None:

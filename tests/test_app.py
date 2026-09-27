@@ -1,0 +1,251 @@
+"""Tests for vrec.app: the batch loop and its steps, exercised with fakes (no Chrome/OBS)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+
+from vrec import app, history
+from vrec.config import Paths, Settings
+from vrec.features import FeatureSet
+from vrec.playlist import url_key
+from vrec.recorder import RecordingResult, StopReason
+
+
+class FakePage:
+    def __init__(self, closed: bool = False) -> None:
+        self._closed = closed
+        self.waits: list[int] = []
+
+    def is_closed(self) -> bool:
+        return self._closed
+
+    def wait_for_timeout(self, ms: int) -> None:
+        self.waits.append(ms)
+
+
+class FakeBrowser:
+    def __init__(self, connected: bool = True) -> None:
+        self._connected = connected
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+
+class FakeClient:
+    """Enough of obsws_python.ReqClient for stop_if_recording/_obs_alive/restore_mutes."""
+
+    def __init__(self, output_active: bool = False, output_path: str = "", alive: bool = True) -> None:
+        self.output_active = output_active
+        self.output_path = output_path
+        self.alive = alive
+        self.stopped = False
+        self.mutes_restored: dict[str, bool] = {}
+
+    def get_record_status(self) -> SimpleNamespace:
+        return SimpleNamespace(output_active=self.output_active)
+
+    def stop_record(self) -> SimpleNamespace:
+        self.stopped = True
+        self.output_active = False
+        return SimpleNamespace(output_path=self.output_path)
+
+    def get_version(self) -> None:
+        if not self.alive:
+            raise RuntimeError("OBS gone")
+
+    def set_input_mute(self, name: str, muted: bool) -> None:
+        self.mutes_restored[name] = muted
+
+
+def make_batch(tmp_path: Path, **overrides: object) -> app.Batch:
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    kwargs: dict[str, object] = dict(
+        paths=paths,
+        settings=Settings(),
+        features=FeatureSet(),
+        test_mode=False,
+        client=FakeClient(),
+        page=FakePage(),
+        browser=FakeBrowser(),
+    )
+    kwargs.update(overrides)
+    return app.Batch(**kwargs)  # type: ignore[arg-type]
+
+
+def make_record(behaviors: list[object]):
+    """A `record` fake: pops one behavior per call (a RecordingResult, or an exception to raise)."""
+    calls: list[dict[str, object]] = []
+    remaining = list(behaviors)
+
+    def record(
+        page, client, meter, scene, settings, features, number, total, url, title, test_mode, max_height
+    ):
+        calls.append({"number": number, "url": url, "title": title, "max_height": max_height})
+        behavior = remaining.pop(0)
+        if isinstance(behavior, BaseException):
+            raise behavior
+        return behavior
+
+    record.calls = calls  # type: ignore[attr-defined]
+    return record
+
+
+def make_result(**kwargs: object) -> RecordingResult:
+    defaults = dict(number=1, title="Video", reason=StopReason.ENDED.value, image_ok=True, audio_ok=True)
+    defaults.update(kwargs)
+    return RecordingResult(**defaults)  # type: ignore[arg-type]
+
+
+# ---------- _record_batch ----------
+
+
+def test_normal_batch_updates_history(tmp_path: Path) -> None:
+    batch = make_batch(tmp_path)
+    record = make_record([make_result(title="Video 1"), make_result(title="Video 2")])
+    selection = [("https://x/1", "Video 1"), ("https://x/2", "Video 2")]
+
+    app._record_batch(batch, selection, record=record)
+
+    assert len(batch.results) == 2
+    assert batch.videos_history[url_key("https://x/1")]["status"] == history.STATUS_DONE
+    assert batch.videos_history[url_key("https://x/2")]["status"] == history.STATUS_DONE
+    assert len(record.calls) == 2  # type: ignore[attr-defined]
+
+
+def test_check_result_marks_review(tmp_path: Path) -> None:
+    batch = make_batch(tmp_path)
+    record = make_record([make_result(image_ok=False)])
+    selection = [("https://x/1", "Video 1")]
+
+    app._record_batch(batch, selection, record=record)
+
+    entry = batch.videos_history[url_key("https://x/1")]
+    assert entry["status"] == history.STATUS_REVIEW
+
+
+def test_exception_stops_obs_and_renames_interrupted(tmp_path: Path) -> None:
+    rec_file = tmp_path / "output.mkv"
+    rec_file.write_bytes(b"data")
+    client = FakeClient(output_active=True, output_path=str(rec_file))
+    batch = make_batch(tmp_path, client=client)
+    record = make_record([RuntimeError("boom")])
+    selection = [("https://x/1", "My Video")]
+
+    app._record_batch(batch, selection, record=record)
+
+    assert client.stopped
+    failed = batch.results[0]
+    assert failed.file is not None
+    assert failed.file.name == "INTERRUPTED - My Video.mkv"
+    assert failed.file.exists()
+    entry = batch.videos_history[url_key("https://x/1")]
+    assert entry["status"] == history.STATUS_FAILED
+
+
+def test_lost_chrome_stops_batch(tmp_path: Path) -> None:
+    page = FakePage(closed=True)
+    batch = make_batch(tmp_path, page=page)
+    record = make_record([RuntimeError("boom"), make_result(), make_result()])
+    selection = [("https://x/1", "V1"), ("https://x/2", "V2"), ("https://x/3", "V3")]
+
+    app._record_batch(batch, selection, record=record)
+
+    assert len(record.calls) == 1  # type: ignore[attr-defined]
+    assert url_key("https://x/2") not in batch.videos_history
+    assert url_key("https://x/3") not in batch.videos_history
+
+
+def test_lost_obs_stops_batch(tmp_path: Path) -> None:
+    client = FakeClient(alive=False)
+    batch = make_batch(tmp_path, client=client)
+    record = make_record([RuntimeError("boom"), make_result(), make_result()])
+    selection = [("https://x/1", "V1"), ("https://x/2", "V2"), ("https://x/3", "V3")]
+
+    app._record_batch(batch, selection, record=record)
+
+    assert len(record.calls) == 1  # type: ignore[attr-defined]
+
+
+def test_three_errors_in_a_row_stops(tmp_path: Path) -> None:
+    batch = make_batch(tmp_path)
+    record = make_record([RuntimeError("1"), RuntimeError("2"), RuntimeError("3"), make_result()])
+    selection = [(f"https://x/{i}", f"V{i}") for i in range(1, 5)]
+
+    app._record_batch(batch, selection, record=record)
+
+    assert len(record.calls) == 3  # type: ignore[attr-defined]
+
+
+def test_circuit_breaker_off_continues_through_errors_and_lost_connections(tmp_path: Path) -> None:
+    page = FakePage(closed=True)
+    client = FakeClient(alive=False)
+    batch = make_batch(tmp_path, page=page, client=client, features=FeatureSet({"circuit_breaker": False}))
+    record = make_record([RuntimeError("1"), RuntimeError("2"), RuntimeError("3"), RuntimeError("4")])
+    selection = [(f"https://x/{i}", f"V{i}") for i in range(1, 5)]
+
+    app._record_batch(batch, selection, record=record)
+
+    assert len(record.calls) == 4  # type: ignore[attr-defined]
+
+
+def test_stalled_retries_once_below_target_height(tmp_path: Path) -> None:
+    batch = make_batch(tmp_path)
+    stalled = make_result(reason=StopReason.STALLED.value, target_height=720)
+    ok = make_result(reason=StopReason.ENDED.value)
+    record = make_record([stalled, ok])
+    selection = [("https://x/1", "V1")]
+
+    app._record_batch(batch, selection, record=record)
+
+    calls = record.calls  # type: ignore[attr-defined]
+    assert len(calls) == 2
+    assert calls[1]["max_height"] == 719
+    assert batch.results == [ok]
+    entry = batch.videos_history[url_key("https://x/1")]
+    assert entry["status"] == history.STATUS_DONE
+
+
+def test_quality_retry_off_skips_retry(tmp_path: Path) -> None:
+    batch = make_batch(tmp_path, features=FeatureSet({"quality_retry": False}))
+    stalled = make_result(reason=StopReason.STALLED.value, target_height=720)
+    record = make_record([stalled])
+    selection = [("https://x/1", "V1")]
+
+    app._record_batch(batch, selection, record=record)
+
+    assert len(record.calls) == 1  # type: ignore[attr-defined]
+    entry = batch.videos_history[url_key("https://x/1")]
+    assert entry["status"] == history.STATUS_FAILED
+
+
+def test_test_mode_does_not_touch_history(tmp_path: Path) -> None:
+    batch = make_batch(tmp_path, test_mode=True)
+    record = make_record([make_result()])
+    selection = [("https://x/1", "V1")]
+
+    app._record_batch(batch, selection, record=record)
+
+    assert batch.videos_history == {}
+    assert len(batch.results) == 1
+
+
+def test_keyboard_interrupt_stops_obs_renames_and_restores_mutes(tmp_path: Path) -> None:
+    rec_file = tmp_path / "output.mkv"
+    rec_file.write_bytes(b"data")
+    client = FakeClient(output_active=True, output_path=str(rec_file))
+    batch = make_batch(tmp_path, client=client, mutes={"Mic": False})
+    record = make_record([KeyboardInterrupt()])
+    selection = [("https://x/1", "My Video")]
+
+    try:
+        app._record_batch(batch, selection, record=record)
+    except KeyboardInterrupt:
+        app._handle_keyboard_interrupt(batch)
+    finally:
+        app._cleanup_audio(batch)
+
+    assert client.stopped
+    assert url_key("https://x/1") not in batch.videos_history
+    assert not batch.results
+    assert client.mutes_restored == {"Mic": False}
