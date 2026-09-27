@@ -33,10 +33,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="wait for Enter before closing (used by the .bat files)",
     )
     parser.add_argument("--version", action="version", version=f"vrec {__version__}")
+    _add_schedule_arguments(parser)
     return parser
 
 
+def _add_schedule_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--schedule",
+        nargs="+",
+        metavar="ACTION",
+        help="manage a scheduled unattended run: 'on HH:MM', 'off', or 'status'",
+    )
+    parser.add_argument(
+        "--days",
+        default=None,
+        metavar="MON,TUE,...",
+        help="days for '--schedule on' (default: every day)",
+    )
+
+
 def _run(args: argparse.Namespace) -> int:
+    if args.schedule is not None:
+        return _run_schedule(args)
+
     data_dir = args.data_dir or Path(os.environ.get("VREC_DATA_DIR", "data"))
     data_dir.mkdir(parents=True, exist_ok=True)
     config_path = args.config or (data_dir / "config.toml")
@@ -57,6 +76,28 @@ def _run(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         print("Stopped.")
         return 130
+
+
+def _run_schedule(args: argparse.Namespace) -> int:
+    from vrec import schedule
+    from vrec.errors import VrecError
+
+    action, *rest = args.schedule
+    try:
+        if action == "on" and len(rest) == 1:
+            data_dir = args.data_dir or Path(os.environ.get("VREC_DATA_DIR", "data"))
+            print(schedule.schedule_on(rest[0], args.days, data_dir, args.config))
+        elif action == "off" and not rest:
+            print(schedule.schedule_off())
+        elif action == "status" and not rest:
+            print(schedule.schedule_status())
+        else:
+            print("Usage: vrec --schedule on HH:MM [--days MON,TUE,...] | off | status")
+            return 1
+    except VrecError as e:
+        print(str(e))
+        return 1
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
