@@ -33,7 +33,12 @@ class FakeRunner:
 
 @pytest.fixture(autouse=True)
 def _local_appdata(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """All tests get a fake %LOCALAPPDATA% so the launcher never touches the real one."""
+    """All tests get a fake %LOCALAPPDATA% so the launcher never touches the real one.
+
+    They also run as if on Windows (CI runs them on Linux too); the non-Windows tests
+    below set their own platform.
+    """
+    monkeypatch.setattr(sys, "platform", "win32")
     appdata = tmp_path / "AppData" / "Local"
     appdata.mkdir(parents=True)
     monkeypatch.setenv("LOCALAPPDATA", str(appdata))
