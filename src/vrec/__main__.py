@@ -44,6 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"vrec {__version__}")
     _add_schedule_arguments(parser)
     _add_selection_arguments(parser)
+    _add_display_arguments(parser)
     return parser
 
 
@@ -55,6 +56,57 @@ def _add_selection_arguments(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--only", metavar="LIST", default=None, help="record exactly these numbers, e.g. 3,1,5-8, no menu"
     )
+
+
+def _add_display_arguments(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--install-display-helper",
+        nargs="?",
+        const="*Virtual*",
+        metavar="PATTERN",
+        help="once, as administrator: let vrec turn the virtual display on/off "
+        "(PATTERN matches the display adapter name, default *Virtual*)",
+    )
+    group.add_argument(
+        "--uninstall-display-helper", action="store_true", help="remove what --install-display-helper added"
+    )
+
+
+def _run_display_helper(args: argparse.Namespace) -> int:
+    """Handle --install-display-helper / --uninstall-display-helper: no OBS/Chrome, no instance lock."""
+    from vrec import display
+    from vrec.errors import VrecError
+
+    try:
+        if args.uninstall_display_helper:
+            display.uninstall_helper()
+            print("Virtual display helper removed.")
+            return 0
+
+        pattern = args.install_display_helper
+        devices = display.list_display_devices()
+        matching = [d for d in devices if _like(d, pattern)]
+        if not matching:
+            print(f"No display adapter matches '{pattern}'. Adapters found:")
+            for device in devices:
+                print(f"  - {device}")
+            print('Run again with a pattern that matches yours, e.g. --install-display-helper "*Virtual*".')
+            return 1
+        script = display.install_helper(pattern)
+    except VrecError as e:
+        print(str(e))
+        return 1
+    print(f"Virtual display helper installed ({script}). It will switch: {', '.join(matching)}")
+    print("Now turn the feature on: vrec --enable manage_virtual_display")
+    return 0
+
+
+def _like(name: str, pattern: str) -> bool:
+    """PowerShell-style -like matching (case-insensitive wildcards), as the helper script uses."""
+    from fnmatch import fnmatchcase
+
+    return fnmatchcase(name.lower(), pattern.lower())
 
 
 def _run_features(args: argparse.Namespace, data_dir: Path) -> int:
@@ -111,6 +163,8 @@ def _add_schedule_arguments(parser: argparse.ArgumentParser) -> None:
 def _run(args: argparse.Namespace) -> int:
     if args.schedule is not None:
         return _run_schedule(args)
+    if args.install_display_helper or args.uninstall_display_helper:
+        return _run_display_helper(args)
 
     data_dir = args.data_dir or Path(os.environ.get("VREC_DATA_DIR", "data"))
     data_dir.mkdir(parents=True, exist_ok=True)

@@ -18,8 +18,15 @@ from pathlib import Path
 import obsws_python as obs
 from playwright.sync_api import Browser, Page
 
-from vrec import history, menu, obs_control
-from vrec.browser import connect_browser, window_state
+from vrec import display, history, menu, obs_control
+from vrec.browser import (
+    WindowBounds,
+    connect_browser,
+    get_window_bounds,
+    move_window_to,
+    set_window_bounds,
+    window_state,
+)
 from vrec.config import Paths, Settings, load_settings
 from vrec.console import first_line, warn
 from vrec.errors import VrecError
@@ -59,6 +66,8 @@ class Batch:
     results: list[RecordingResult] = field(default_factory=list)
     current_title: str = ""
     initial_window_state: str | None = None
+    initial_bounds: WindowBounds | None = None
+    display_turned_on: bool = False
 
 
 def run(
@@ -114,6 +123,7 @@ def _run_locked(
 
     try:
         _prepare_audio(batch)
+        _virtual_display_on(batch)
         with connect_browser(
             settings.chrome_port,
             quality_filter=features.enabled("quality_filter"),
@@ -122,10 +132,12 @@ def _run_locked(
             batch.browser = browser
             batch.page = page
             if interactive:
-                menu.ask(
-                    f"\n{len(selection)} video(s) to record. Check that the Chrome window is on the "
-                    "virtual screen, then press Enter to start..."
+                where = (
+                    "Chrome will be moved to the virtual screen automatically"
+                    if features.enabled("auto_place_window")
+                    else "Check that the Chrome window is on the virtual screen"
                 )
+                menu.ask(f"\n{len(selection)} video(s) to record. {where}. Press Enter to start...")
                 print()
 
             if client.get_record_status().output_active:
@@ -140,6 +152,7 @@ def _run_locked(
         _handle_keyboard_interrupt(batch)
     finally:
         _cleanup_audio(batch)
+        _virtual_display_off(batch)
 
     return _final_report(batch)
 
@@ -237,11 +250,61 @@ def _prepare_audio(batch: Batch) -> None:
         print("(Audio check unavailable, continuing without it.)")
 
 
-def _prepare_window(batch: Batch) -> None:
-    """Fullscreen the Chrome window before recording starts.
+def _virtual_display_on(batch: Batch) -> None:
+    """Turn the virtual display on for the batch (feature manage_virtual_display, off by default)."""
+    if not batch.features.enabled("manage_virtual_display"):
+        return
+    wanted = batch.settings.display_screen
+    if display.pick_screen(display.list_screens(), wanted):
+        return  # already on: leave it as the user had it
+    try:
+        display.set_virtual_display(True)
+    except VrecError as e:
+        warn(str(e))
+        return
+    batch.display_turned_on = True
+    screen = display.wait_for_screen(wanted)
+    if screen:
+        print(f"Virtual display turned on: {screen.describe()}.")
+    else:
+        warn("The virtual display didn't show up within 15 s. Continuing anyway.")
 
-    Hook point: window placement / virtual display handling will be added here later.
-    """
+
+def _virtual_display_off(batch: Batch) -> None:
+    """Turn the virtual display back off, only if this run turned it on."""
+    if not batch.display_turned_on:
+        return
+    try:
+        display.set_virtual_display(False)
+        print("Virtual display turned off.")
+    except VrecError as e:
+        warn(str(e))
+
+
+def _place_window(batch: Batch) -> None:
+    """Move Chrome onto the virtual screen (feature auto_place_window)."""
+    if not batch.features.enabled("auto_place_window"):
+        return
+    screen = display.pick_screen(display.list_screens(), batch.settings.display_screen)
+    if screen is None:
+        warn(
+            "No virtual screen found to move Chrome to: recording on the screen it is on. "
+            "Check [display] screen in config.toml, or move it by hand (Win+Shift+Arrow)."
+        )
+        return
+    try:
+        batch.initial_bounds = get_window_bounds(batch.browser, batch.page)
+        if move_window_to(batch.browser, batch.page, screen):
+            print(f"Chrome moved to {screen.describe()}.")
+        else:
+            warn(f"Couldn't move Chrome to {screen.describe()}. Move it by hand (Win+Shift+Arrow).")
+    except Exception as e:
+        warn(f"Couldn't move Chrome: {first_line(e)}")
+
+
+def _prepare_window(batch: Batch) -> None:
+    """Put the Chrome window on the virtual screen, then fullscreen it, before recording starts."""
+    _place_window(batch)
     try:
         batch.initial_window_state = window_state(batch.browser, batch.page, "fullscreen")
     except Exception as e:
@@ -249,10 +312,11 @@ def _prepare_window(batch: Batch) -> None:
 
 
 def _restore_window(batch: Batch) -> None:
-    """Put the Chrome window back the way it was before `_prepare_window`.
-
-    Hook point: window placement / virtual display handling will be added here later.
-    """
+    """Put the Chrome window back where and how it was before `_prepare_window`."""
+    if batch.initial_bounds:
+        with contextlib.suppress(Exception):
+            set_window_bounds(batch.browser, batch.page, batch.initial_bounds)
+        return
     state = batch.initial_window_state
     if state and state != "fullscreen":
         with contextlib.suppress(Exception):
