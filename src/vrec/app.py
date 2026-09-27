@@ -88,7 +88,10 @@ def _run_locked(paths: Paths, settings: Settings, features: FeatureSet, test_mod
             meter = None
             print("(Audio check unavailable, continuing without it.)")
 
-        with connect_browser(settings.chrome_port) as (browser, page):
+        with connect_browser(settings.chrome_port, quality_filter=features.enabled("quality_filter")) as (
+            browser,
+            page,
+        ):
             menu.ask(
                 f"\n{len(selection)} video(s) to record. Check that the Chrome window is on the "
                 "virtual screen, then press Enter to start..."
@@ -116,6 +119,7 @@ def _run_locked(paths: Paths, settings: Settings, features: FeatureSet, test_mod
                             meter,
                             scene,
                             settings,
+                            features,
                             i,
                             len(selection),
                             url,
@@ -133,6 +137,7 @@ def _run_locked(paths: Paths, settings: Settings, features: FeatureSet, test_mod
                                 meter,
                                 scene,
                                 settings,
+                                features,
                                 i,
                                 len(selection),
                                 url,

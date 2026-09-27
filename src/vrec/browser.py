@@ -20,15 +20,19 @@ def load_js(name: str) -> str:
 
 
 @contextmanager
-def connect_browser(chrome_port: int) -> Iterator[tuple[Browser, Page]]:
-    """Connect to the Chrome instance started by launch_chrome.bat and pick a page to use."""
+def connect_browser(chrome_port: int, quality_filter: bool = True) -> Iterator[tuple[Browser, Page]]:
+    """Connect to the Chrome instance started by launch_chrome.bat and pick a page to use.
+
+    `quality_filter` installs the manifest filter (quality_filter.js) in every page loaded from now on.
+    """
     with sync_playwright() as playwright:
         try:
             browser = playwright.chromium.connect_over_cdp(f"http://localhost:{chrome_port}", timeout=10000)
         except Exception as e:
             raise VrecError("Chrome not found: run launch_chrome.bat first.") from e
         context = browser.contexts[0]
-        context.add_init_script(load_js("quality_filter.js"))
+        if quality_filter:
+            context.add_init_script(load_js("quality_filter.js"))
         pages = [pg for pg in context.pages if pg.url.startswith(("http", "about:blank", "chrome://newtab"))]
         page = pages[0] if pages else context.new_page()
         page.bring_to_front()

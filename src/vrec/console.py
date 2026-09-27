@@ -26,3 +26,20 @@ def first_line(error: BaseException) -> str:
 def warn(message: str) -> None:
     """Print a short, friendly warning without stopping the program."""
     print(f"\n   ! {message}")
+
+
+class ProgressLine:
+    """A status line rewritten in place (with a carriage return) until `end()` is called."""
+
+    def __init__(self) -> None:
+        self._width = 0
+
+    def show(self, text: str) -> None:
+        line = f"   {text}"
+        print(f"\r{line.ljust(self._width)}", end="", flush=True)
+        self._width = max(self._width, len(line))
+
+    def end(self) -> None:
+        if self._width:
+            print()
+            self._width = 0

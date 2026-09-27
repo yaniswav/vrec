@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import math
 import re
-import time
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 import obsws_python as obs
 from playwright.sync_api import Page
@@ -15,28 +14,25 @@ from playwright.sync_api import Page
 from vrec import history
 from vrec.browser import document_script, load_js
 from vrec.config import Settings
-from vrec.console import human_duration, warn
+from vrec.console import ProgressLine, human_duration, warn
+from vrec.features import FeatureSet
+from vrec.monitor import Output, StopReason, WatchConfig, watch
 from vrec.naming import FAILED_BLACK_PREFIX, INCOMPLETE_PREFIX, TEST_PREFIX, clean_title, rename_recording
 from vrec.obs_control import AudioMeter, is_black_frame
+
+__all__ = [
+    "INCOMPLETE_REASONS",
+    "RecordingResult",
+    "StopReason",
+    "history_status",
+    "lower_quality_retry_cap",
+    "record_one",
+    "status_text",
+]
 
 JS_PLAY = "() => { window.__vrecVideo.play().catch(() => {}); }"
 JS_PAUSE = "() => { window.__vrecVideo.pause(); }"
 _JS_GET_FORCED_QUALITY = "() => window.__vrecForcedQuality || null"
-
-# While buffering, resume once the reserve has stopped growing for this long: some players
-# cap their buffer by size, so at high bitrates the resume threshold may never be reached.
-_PLATEAU_S = 5
-
-
-class StopReason(StrEnum):
-    ENDED = "ended"
-    TEST_DONE = "test finished"
-    TIME_LIMIT = "time limit reached"
-    VIDEO_GONE = "video removed from page"
-    STALLED = "loading stalled"
-    BLACK = "black image"
-    TOO_LONG = "took too long"
-
 
 # Reasons that mean the recording is missing part of the video, not just unverified:
 # never fully recorded, so it should be retried rather than merely reviewed.
@@ -49,13 +45,53 @@ class RecordingResult:
     title: str = ""
     reason: str = ""  # a StopReason value, or "ERROR: ..."
     fullscreen: bool = False
-    image_ok: bool = False
-    audio_ok: bool | None = None
+    image_ok: bool | None = False  # None: not checked (black_check off)
+    audio_ok: bool | None = None  # None: not checked
     file: Path | None = None
     quality: str = ""
     target_height: int = 0  # height vrec asked the player for (0 = unknown)
     max_resolution: tuple[int, int] = field(default=(0, 0))
     buffering_pauses: int = 0
+
+
+class _PagePlayer:
+    """The video element picked by pick_video.js, driven through Playwright."""
+
+    def __init__(self, page: Page) -> None:
+        self._page = page
+
+    def state(self) -> dict[str, Any] | None:
+        return self._page.evaluate(load_js("state.js"))
+
+    def play(self) -> None:
+        self._page.evaluate(JS_PLAY)
+
+    def pause(self) -> None:
+        self._page.evaluate(JS_PAUSE)
+
+    def wait(self, seconds: float) -> None:
+        self._page.wait_for_timeout(int(seconds * 1000))
+
+
+class _ObsCapture:
+    """OBS as seen by the playback loop."""
+
+    def __init__(
+        self, client: obs.ReqClient, scene: str, settings: Settings, meter: AudioMeter | None
+    ) -> None:
+        self._client, self._scene, self._settings, self._meter = client, scene, settings, meter
+
+    def pause(self) -> None:
+        self._client.pause_record()
+
+    def resume(self) -> None:
+        self._client.resume_record()
+
+    def is_black(self) -> bool | None:
+        return is_black_frame(self._client, self._scene, self._settings)
+
+    def audio_peak(self) -> float | None:
+        return self._meter.peak if self._meter else None
 
 
 def record_one(
@@ -64,6 +100,7 @@ def record_one(
     meter: AudioMeter | None,
     scene: str,
     settings: Settings,
+    features: FeatureSet,
     number: int,
     total: int,
     url: str,
@@ -73,6 +110,7 @@ def record_one(
 ) -> RecordingResult:
     result = RecordingResult(number=number)
     print(f"[{number}/{total}] {title or url}")
+    force_quality = features.enabled("quality_filter")
 
     # The quality filter reads this cap when the player fetches its list of qualities.
     with document_script(page, f"window.__vrecMaxHeight = {int(max_height)};"):
@@ -85,20 +123,21 @@ def record_one(
     if not result.fullscreen:
         warn("The video doesn't fill the whole screen, recording continues anyway")
 
-    forced = page.evaluate(_JS_GET_FORCED_QUALITY)
-    if forced:
-        target_height = int(re.sub(r"\D", "", forced.split("x")[-1]) or 0)
-        quality_info = {"method": "stream quality list", "target": target_height}
+    forced = page.evaluate(_JS_GET_FORCED_QUALITY) if force_quality else None
+    if not force_quality:
+        print("   Quality: left to the site (quality_filter is off)")
+    elif forced:
+        result.target_height = int(re.sub(r"\D", "", forced.split("x")[-1]) or 0)
         result.quality = forced
         print(f"   Quality: {forced} forced from the start")
     else:
         quality_info = page.evaluate(load_js("max_quality.js"), max_height)
+        result.target_height = int(quality_info["target"] or 0)
         if quality_info["method"]:
-            result.quality = f"{quality_info['target']}p" if quality_info["target"] else "max"
+            result.quality = f"{result.target_height}p" if result.target_height else "max"
             print(f"   Quality: {result.quality} (via {quality_info['method']})")
         else:
             warn("Couldn't find a quality selector: the site decides on its own (auto)")
-    result.target_height = int(quality_info["target"] or 0)
 
     # Rewinding makes the player reload the video, now at the chosen quality.
     page.wait_for_timeout(int(settings.fullscreen_settle_s * 1000))
@@ -107,7 +146,7 @@ def record_one(
     page.wait_for_timeout(1000)
     width, height, streaming = page.evaluate(load_js("resolution.js"))
     print(f"   Received image: {width}x{height}")
-    if streaming and not forced:
+    if force_quality and streaming and not forced:
         warn("Unrecognized streaming format: couldn't force the max quality in advance")
         if test_mode:
             print("   Player requests (include these in a bug report):")
@@ -120,155 +159,48 @@ def record_one(
         meter.reset()
     page.evaluate(JS_PLAY)
 
-    start = time.time()
-    if test_mode:
-        limit = settings.test_duration_s
-        wall_base = settings.test_duration_s
-    elif duration and math.isfinite(duration):
-        limit = duration + 120
-        wall_base = duration * settings.max_wall_factor if duration > 0 else 4 * 3600
-    else:
-        limit = 4 * 3600
-        wall_base = 4 * 3600
-    # Hard safety cap, independent of the checks above: stop no matter what once this
-    # much wall-clock time has passed, even if the recording is paused for buffering.
-    wall_limit = start + wall_base + settings.max_wall_extra_s
-    last_t, last_progress = -1.0, time.time()
-    audio_warned = stall_warned = quality_warned = False
-    resumes = 0
-    next_black_check = start + 3
-    buffering, buffering_start, paused_time, pause_allowed = False, 0.0, 0.0, True
-    best_buffer, last_growth = 0.0, 0.0
+    config = WatchConfig(
+        duration=duration if isinstance(duration, int | float) else math.nan,
+        test_mode=test_mode,
+        test_duration_s=settings.test_duration_s,
+        pause_below_s=settings.pause_below_s,
+        resume_at_s=settings.resume_at_s,
+        max_stall_s=settings.max_stall_s,
+        abort_if_black_after_s=settings.abort_if_black_after_s,
+        audio_level=settings.audio_level,
+        max_wall_factor=settings.max_wall_factor,
+        max_wall_extra_s=settings.max_wall_extra_s,
+        target_height=result.target_height,
+        buffer_pause=features.enabled("buffer_pause"),
+        black_check=features.enabled("black_check"),
+        audio_check=features.enabled("audio_check"),
+        wall_clock_cap=features.enabled("wall_clock_cap"),
+    )
+    line = ProgressLine()
+    outcome = watch(
+        _PagePlayer(page),
+        _ObsCapture(client, scene, settings, meter),
+        config,
+        Output(warn=warn, progress=line.show, end_progress=line.end),
+    )
+    result.reason = outcome.reason.value
+    result.image_ok = outcome.image_ok
+    result.max_resolution = outcome.max_resolution
+    result.buffering_pauses = outcome.buffering_pauses
 
-    while True:
-        page.wait_for_timeout(500)
-        now = time.time()
-        elapsed = now - start - paused_time - (now - buffering_start if buffering else 0)
-        state = page.evaluate(load_js("state.js"))
-        if state is None:
-            result.reason = StopReason.VIDEO_GONE.value
-            break
-        if state["ended"]:
-            result.reason = StopReason.ENDED.value
-            break
-        if elapsed > limit:
-            result.reason = StopReason.TEST_DONE.value if test_mode else StopReason.TIME_LIMIT.value
-            break
-        if now >= wall_limit:
-            # Stops even mid-buffering: OBS can stop a paused recording just fine.
-            result.reason = StopReason.TOO_LONG.value
-            break
-
-        video_duration = state["d"]
-        remaining = (
-            video_duration - state["t"] if video_duration and math.isfinite(video_duration) else float("inf")
-        )
-        enough_buffered = state["buffer"] >= min(settings.resume_at_s, remaining - 0.5)
-
-        # Buffering: both the video and the recording are paused.
-        if buffering:
-            waited = now - buffering_start
-            if state["buffer"] > best_buffer + 0.5:
-                best_buffer, last_growth = state["buffer"], now
-            plateaued = now - last_growth >= _PLATEAU_S and state["buffer"] >= settings.pause_below_s + 2
-            print(
-                f"\r   Buffering... {state['buffer']:4.1f} s in reserve (recording paused)   ",
-                end="",
-                flush=True,
-            )
-            if enough_buffered or plateaued:
-                client.resume_record()
-                page.evaluate(JS_PLAY)
-                paused_time += waited
-                buffering = False
-            elif waited > settings.max_stall_s:
-                result.reason = StopReason.STALLED.value
-                break
-            continue
-
-        # Buffer almost empty: pause everything BEFORE the image freezes.
-        if (
-            pause_allowed
-            and state["buffer"] < settings.pause_below_s
-            and remaining > settings.pause_below_s + 1
-        ):
-            page.evaluate(JS_PAUSE)
-            try:
-                client.pause_record()
-                buffering, buffering_start = True, now
-                best_buffer, last_growth = state["buffer"], now
-                result.buffering_pauses += 1
-                print()
-            except Exception:
-                pause_allowed = False
-                page.evaluate(JS_PLAY)
-                warn("OBS refuses to pause: buffering will be recorded (frozen image).")
-            continue
-
-        if video_duration and math.isfinite(video_duration):
-            print(
-                f"\r   Playing {state['t'] / video_duration:6.1%}  "
-                f"({human_duration(state['t'])} / {human_duration(video_duration)})"
-                "                              ",
-                end="",
-                flush=True,
-            )
-
-        if state["paused"] and resumes < 5:  # the page paused on its own
-            page.evaluate(JS_PLAY)
-            resumes += 1
-
-        if state["h"] > result.max_resolution[1]:
-            result.max_resolution = (state["w"], state["h"])
-        if (
-            quality_info["target"]
-            and not quality_warned
-            and elapsed > 20
-            and result.max_resolution[1] < quality_info["target"] * 0.9
-        ):
-            warn(
-                f"Quality lower than expected ({result.max_resolution[0]}x{result.max_resolution[1]}). "
-                "Connection too slow?"
-            )
-            quality_warned = True
-
-        if state["t"] != last_t:
-            last_t, last_progress = state["t"], time.time()
-            resumes = 0
-        elif time.time() - last_progress > 15 and not stall_warned:
-            warn("The video isn't advancing (loading?). Recording continues.")
-            stall_warned = True
-
-        if not result.image_ok and time.time() >= next_black_check:
-            black = is_black_frame(client, scene, settings)
-            if black is None:
-                next_black_check = time.time() + 5  # screenshot failed: retry later, don't abort
-            elif black:
-                next_black_check = time.time() + 5
-                if elapsed > settings.abort_if_black_after_s:
-                    result.reason = StopReason.BLACK.value
-                    break
-            else:
-                result.image_ok = True
-
-        if meter and not audio_warned and elapsed > 20 and meter.peak < settings.audio_level:
-            warn("No audio detected. Check that Chrome is routed to CABLE Input.")
-            audio_warned = True
-
-    print()
     if result.buffering_pauses:
         print(f"   {result.buffering_pauses} buffering pause(s), excluded from the recording")
-    if result.reason not in (StopReason.BLACK.value, StopReason.STALLED.value):
+    if outcome.reason not in (StopReason.BLACK, StopReason.STALLED):
         page.wait_for_timeout(int(settings.tail_s * 1000))
     path = client.stop_record().output_path
-    if meter:
+    if meter and config.audio_check:
         result.audio_ok = meter.peak >= settings.audio_level
 
     if test_mode:
         stem = f"{TEST_PREFIX} - {result.title}"
-    elif result.reason == StopReason.BLACK.value:
+    elif outcome.reason == StopReason.BLACK:
         stem = f"{FAILED_BLACK_PREFIX} - {result.title}"
-    elif result.reason in INCOMPLETE_REASONS:
+    elif outcome.reason in INCOMPLETE_REASONS:
         stem = f"{INCOMPLETE_PREFIX} - {result.title}"
     else:
         stem = result.title
@@ -298,7 +230,7 @@ def status_text(result: RecordingResult) -> str:
     if result.reason in INCOMPLETE_REASONS:
         return f"FAILED: incomplete ({result.reason})"
     problems = []
-    if not result.image_ok:
+    if result.image_ok is False:
         problems.append("black image?")
     if result.audio_ok is False:
         problems.append("no audio")
