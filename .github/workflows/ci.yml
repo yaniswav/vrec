@@ -23,6 +23,25 @@ jobs:
       - run: pip install ruff
       - run: ruff check .
       - run: ruff format --check .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node .github/scripts/check-js.js
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
 
   test:
     strategy:
@@ -42,4 +61,4 @@ jobs:
         with:
           node-version: "22"
       - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest -q
+      - run: python -m pytest -q --cov --cov-report=term
