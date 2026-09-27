@@ -28,16 +28,19 @@ def make_batch(tmp_path: Path, **features: bool) -> app.Batch:
     )
 
 
+REAL_SIDE = Screen("DISPLAY2", -1920, 0, 1920, 1080, primary=False)  # a real second monitor
+
+
 @pytest.fixture
 def display_calls(monkeypatch):
     calls: list[bool] = []
     monkeypatch.setattr(app.display, "set_virtual_display", lambda on: calls.append(on))
-    monkeypatch.setattr(app.display, "wait_for_screen", lambda wanted: VIRTUAL)
+    monkeypatch.setattr(app.display, "wait_for_new_screen", lambda before: VIRTUAL)
     return calls
 
 
 def test_display_left_alone_when_feature_off(tmp_path, monkeypatch, display_calls):
-    monkeypatch.setattr(app.display, "list_screens", lambda: [MAIN])
+    monkeypatch.setattr(app.display, "virtual_display_enabled", lambda: pytest.fail("should not ask"))
     batch = make_batch(tmp_path)  # manage_virtual_display is off by default
     app._virtual_display_on(batch)
     app._virtual_display_off(batch)
@@ -45,7 +48,7 @@ def test_display_left_alone_when_feature_off(tmp_path, monkeypatch, display_call
 
 
 def test_display_already_on_is_not_touched(tmp_path, monkeypatch, display_calls):
-    monkeypatch.setattr(app.display, "list_screens", lambda: [MAIN, VIRTUAL])
+    monkeypatch.setattr(app.display, "virtual_display_enabled", lambda: True)
     batch = make_batch(tmp_path, manage_virtual_display=True)
     app._virtual_display_on(batch)
     app._virtual_display_off(batch)
@@ -53,11 +56,15 @@ def test_display_already_on_is_not_touched(tmp_path, monkeypatch, display_calls)
     assert not batch.display_turned_on
 
 
-def test_display_turned_on_then_off(tmp_path, monkeypatch, display_calls, capsys):
-    monkeypatch.setattr(app.display, "list_screens", lambda: [MAIN])
+def test_a_real_second_monitor_is_not_mistaken_for_the_virtual_display(
+    tmp_path, monkeypatch, display_calls, capsys
+):
+    monkeypatch.setattr(app.display, "list_screens", lambda: [MAIN, REAL_SIDE])
+    monkeypatch.setattr(app.display, "virtual_display_enabled", lambda: False)
     batch = make_batch(tmp_path, manage_virtual_display=True)
     app._virtual_display_on(batch)
     assert batch.display_turned_on
+    assert batch.virtual_screen == VIRTUAL  # the screen that appeared, not the real side monitor
     app._virtual_display_off(batch)
     assert display_calls == [True, False]
     out = capsys.readouterr().out
@@ -65,8 +72,21 @@ def test_display_turned_on_then_off(tmp_path, monkeypatch, display_calls, capsys
     assert "Virtual display turned off." in out
 
 
+def test_placement_targets_the_screen_that_was_turned_on(tmp_path, monkeypatch):
+    moves: list[Screen] = []
+    monkeypatch.setattr(app.display, "list_screens", lambda: [MAIN, REAL_SIDE, VIRTUAL])
+    monkeypatch.setattr(app, "get_window_bounds", lambda b, p: WindowBounds(0, 0, 800, 600, "normal"))
+    monkeypatch.setattr(app, "move_window_to", lambda b, p, s: moves.append(s) or True)
+    monkeypatch.setattr(app, "window_state", lambda b, p, state=None: "normal")
+    batch = make_batch(tmp_path)
+    batch.virtual_screen = VIRTUAL
+    app._prepare_window(batch)
+    assert moves == [VIRTUAL]
+
+
 def test_display_helper_missing_only_warns(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(app.display, "list_screens", lambda: [MAIN])
+    monkeypatch.setattr(app.display, "virtual_display_enabled", lambda: None)
 
     def fail(on: bool) -> None:
         raise VrecError("The virtual display helper isn't installed")

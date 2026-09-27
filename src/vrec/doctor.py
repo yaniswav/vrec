@@ -1,0 +1,325 @@
+"""`vrec --doctor`: read-only preflight checks.
+
+Doctor never starts a recording, never touches OBS or Chrome's state (beyond, like a normal
+run, possibly saving the OBS WebSocket password the first time it's typed in), and never
+takes the instance lock -- so it can run happily alongside, or instead of, a normal run.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import obsws_python as obs
+
+from vrec import obs_control
+from vrec.config import Paths, Settings, load_settings
+from vrec.console import first_line
+from vrec.errors import VrecError
+from vrec.features import FeatureSet
+from vrec.playlist import read_playlist
+
+_AUDIO_SOURCE_KIND = "wasapi_input_capture"
+_MIN_OBS_VERSION = 28
+_MIN_WEBSOCKET_VERSION = 5
+_MIN_FREE_GB = 20.0
+
+
+@dataclass
+class Check:
+    """The result of one doctor check."""
+
+    status: str  # "ok", "warn", "fail", or "info"
+    title: str
+    detail: str = ""
+    hint: str = ""
+
+
+@dataclass
+class _Context:
+    """Shared state a check function may need, including a lazily connected OBS client."""
+
+    settings: Settings
+    paths: Paths
+    features: FeatureSet
+    _client: obs.ReqClient | None = field(default=None, init=False, repr=False)
+    _client_error: str | None = field(default=None, init=False, repr=False)
+    _tried: bool = field(default=False, init=False, repr=False)
+
+    def client(self) -> obs.ReqClient | None:
+        """The OBS client, connecting (and caching the result, good or bad) on first use."""
+        if not self._tried:
+            self._tried = True
+            try:
+                self._client, _password = obs_control.connect(self.settings, self.paths)
+            except VrecError as e:
+                self._client_error = str(e)
+        return self._client
+
+
+def _skip(title: str) -> Check:
+    return Check("info", title, detail="Skipped: OBS isn't reachable.")
+
+
+# ---------------------------------------------------------------------------
+# Checks. Each takes the shared context and returns one Check. Add more by
+# appending to CHECKS below -- order there is the order they're printed in.
+# ---------------------------------------------------------------------------
+
+
+def check_data_dir(ctx: _Context) -> Check:
+    """Data directory & playlist."""
+    path = ctx.paths.videos
+    if not path.exists():
+        return Check(
+            "fail",
+            "Playlist file",
+            detail=f"Not found: {path}",
+            hint=f"Copy videos.example.txt to {path} and add your links.",
+        )
+    videos = read_playlist(path)
+    if not videos:
+        return Check(
+            "fail",
+            "Playlist file",
+            detail=f"{path.name} contains no links.",
+            hint=f"Copy videos.example.txt to {path} and add your links.",
+        )
+    return Check("ok", "Playlist file", detail=f"{len(videos)} link(s) in {path.name}.")
+
+
+def check_config(ctx: _Context) -> Check:
+    """Config file."""
+    path = ctx.paths.config
+    if not path.exists():
+        return Check("ok", "Config file", detail="Not found: using built-in defaults.")
+    try:
+        load_settings(path)
+    except VrecError as e:
+        return Check("fail", "Config file", detail=first_line(e))
+    return Check("ok", "Config file", detail=f"{path.name} is valid.")
+
+
+def check_features(ctx: _Context) -> Check:
+    """Feature toggles."""
+    off = ctx.features.disabled()
+    if not off:
+        return Check("info", "Feature toggles", detail="All features enabled.")
+    return Check("info", "Feature toggles", detail=f"Disabled: {', '.join(off)}.")
+
+
+def check_obs_connection(ctx: _Context) -> Check:
+    """OBS connection."""
+    client = ctx.client()
+    if client is None:
+        return Check(
+            "fail",
+            "OBS connection",
+            detail=ctx._client_error or "Can't reach OBS.",
+            hint="Open OBS and enable the WebSocket server (Tools > WebSocket Server Settings).",
+        )
+    return Check("ok", "OBS connection", detail="Connected, password OK.")
+
+
+def check_obs_version(ctx: _Context) -> Check:
+    """OBS / obs-websocket version."""
+    client = ctx.client()
+    if client is None:
+        return _skip("OBS / obs-websocket version")
+    version = client.get_version()
+    obs_major = int(str(version.obs_version).split(".")[0])
+    ws_major = int(str(version.obs_web_socket_version).split(".")[0])
+    detail = f"OBS {version.obs_version}, obs-websocket {version.obs_web_socket_version}."
+    if obs_major < _MIN_OBS_VERSION or ws_major < _MIN_WEBSOCKET_VERSION:
+        return Check(
+            "warn",
+            "OBS / obs-websocket version",
+            detail=detail,
+            hint=f"Update OBS to {_MIN_OBS_VERSION}+ (it bundles obs-websocket {_MIN_WEBSOCKET_VERSION}+).",
+        )
+    return Check("ok", "OBS / obs-websocket version", detail=detail)
+
+
+def check_recording_idle(ctx: _Context) -> Check:
+    """Recording status."""
+    client = ctx.client()
+    if client is None:
+        return _skip("Recording status")
+    if client.get_record_status().output_active:
+        return Check(
+            "warn", "Recording status", detail="OBS is already recording.", hint="Stop it before starting."
+        )
+    return Check("ok", "Recording status", detail="Idle.")
+
+
+def _profile_value(client: obs.ReqClient, category: str, name: str) -> str:
+    return str(client.get_profile_parameter(category, name).parameter_value or "")
+
+
+def _output_mode(client: obs.ReqClient) -> str:
+    return _profile_value(client, "Output", "Mode") or "Simple"
+
+
+def check_output_mode(ctx: _Context) -> Check:
+    """Recording output mode."""
+    client = ctx.client()
+    if client is None:
+        return _skip("Recording output mode")
+    mode = _output_mode(client)
+    if mode.lower().startswith("adv"):
+        same_as_stream = _profile_value(client, "AdvOut", "RecEncoder") == "none"
+    else:
+        same_as_stream = _profile_value(client, "SimpleOutput", "RecQuality") == "Stream"
+    if same_as_stream:
+        return Check(
+            "warn",
+            "Recording output mode",
+            detail=f'{mode} mode, recording quality set to "Same as stream".',
+            hint="OBS can't pause this recording.",
+        )
+    return Check("ok", "Recording output mode", detail=f"{mode} mode.")
+
+
+def check_recording_format(ctx: _Context) -> Check:
+    """Recording format."""
+    client = ctx.client()
+    if client is None:
+        return _skip("Recording format")
+    mode = _output_mode(client)
+    section = "AdvOut" if mode.lower().startswith("adv") else "SimpleOutput"
+    fmt = _profile_value(client, section, "RecFormat2")
+    if fmt == "mp4":
+        return Check(
+            "warn",
+            "Recording format",
+            detail="Plain mp4.",
+            hint="A crash mid-recording corrupts the file; use hybrid MP4 or MKV instead.",
+        )
+    return Check("info", "Recording format", detail=fmt or "unknown")
+
+
+def check_recording_folder(ctx: _Context) -> Check:
+    """Recording folder."""
+    client = ctx.client()
+    if client is None:
+        return _skip("Recording folder")
+    folder = client.get_record_directory().record_directory
+    if not Path(folder).exists():
+        return Check("fail", "Recording folder", detail=f"Not found: {folder}")
+    free_gb = shutil.disk_usage(folder).free / 1_000_000_000
+    detail = f"{folder} ({free_gb:.1f} GB free)."
+    if free_gb < _MIN_FREE_GB:
+        return Check("warn", "Recording folder", detail=detail, hint="Free up some disk space.")
+    return Check("ok", "Recording folder", detail=detail)
+
+
+def check_resolution(ctx: _Context) -> Check:
+    """Video resolution."""
+    client = ctx.client()
+    if client is None:
+        return _skip("Video resolution")
+    v = client.get_video_settings()
+    detail = f"Base {v.base_width}x{v.base_height}, output {v.output_width}x{v.output_height}."
+    return Check("info", "Video resolution", detail=detail)
+
+
+def check_scene_capture(ctx: _Context) -> Check:
+    """Display capture source."""
+    client = ctx.client()
+    if client is None:
+        return _skip("Display capture source")
+    scene = obs_control.current_scene(client)
+    items = client.get_scene_item_list(scene).scene_items
+    if any(item.get("inputKind") == "monitor_capture" for item in items):
+        return Check("ok", "Display capture source", detail=f"Found in scene '{scene}'.")
+    return Check(
+        "warn",
+        "Display capture source",
+        detail=f"No display capture source in scene '{scene}'.",
+        hint="Add a Display Capture source to that scene.",
+    )
+
+
+def check_vb_cable(ctx: _Context) -> Check:
+    """VB-CABLE."""
+    client = ctx.client()
+    if client is None:
+        return _skip("VB-CABLE")
+    inputs = client.get_input_list(_AUDIO_SOURCE_KIND).inputs
+    if not inputs:
+        return Check("info", "VB-CABLE", detail="No audio input source yet: checked on the first recording.")
+    name = inputs[0]["inputName"]
+    devices = client.get_input_properties_list_property_items(name, "device_id").property_items
+    if any("cable output" in d["itemName"].lower() for d in devices):
+        return Check("ok", "VB-CABLE", detail=f"Found on input '{name}'.")
+    return Check(
+        "fail",
+        "VB-CABLE",
+        detail=f"Not found on input '{name}'.",
+        hint="Install VB-CABLE and restart the PC.",
+    )
+
+
+def check_chrome_debug_port(ctx: _Context) -> Check:
+    """Chrome debugging port."""
+    url = f"http://localhost:{ctx.settings.chrome_port}/json/version"
+    try:
+        with urllib.request.urlopen(url, timeout=3) as response:  # noqa: S310 - local debug port only
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return Check(
+            "fail", "Chrome debugging port", detail=f"Can't reach {url}", hint="run launch_chrome.bat"
+        )
+    return Check("ok", "Chrome debugging port", detail=data.get("Browser", "reachable"))
+
+
+CHECKS: list[Callable[[_Context], Check]] = [
+    check_data_dir,
+    check_config,
+    check_features,
+    check_obs_connection,
+    check_obs_version,
+    check_recording_idle,
+    check_output_mode,
+    check_recording_format,
+    check_recording_folder,
+    check_resolution,
+    check_scene_capture,
+    check_vb_cable,
+    check_chrome_debug_port,
+]
+
+_LABELS = {"ok": "[ OK ]", "warn": "[WARN]", "fail": "[FAIL]", "info": "[INFO]"}
+
+
+def _print_check(check: Check) -> None:
+    line = _LABELS.get(check.status, "[ ?? ]") + " " + check.title
+    if check.detail:
+        line += f": {check.detail}"
+    print(line)
+    if check.hint:
+        print(f"       -> {check.hint}")
+
+
+def run_doctor(settings: Settings, paths: Paths, features: FeatureSet) -> int:
+    """Run every registered check and print the results. Returns 1 if any check failed, else 0."""
+    ctx = _Context(settings=settings, paths=paths, features=features)
+    counts = {"ok": 0, "warn": 0, "fail": 0, "info": 0}
+    print("===== VREC DOCTOR =====\n")
+    for check_func in CHECKS:
+        try:
+            check = check_func(ctx)
+        except Exception as e:
+            check = Check("fail", (check_func.__doc__ or check_func.__name__).strip(), detail=first_line(e))
+        _print_check(check)
+        counts[check.status] = counts.get(check.status, 0) + 1
+
+    print(
+        f"\n{counts['ok']} OK, {counts['warn']} warning(s), {counts['fail']} failure(s), "
+        f"{counts['info']} info."
+    )
+    return 1 if counts["fail"] else 0

@@ -127,12 +127,34 @@ def wait_for_screen(
         waited += 0.5
 
 
+def wait_for_new_screen(
+    before: Sequence[Screen],
+    timeout_s: float = 15,
+    lister: Callable[[], list[Screen]] = list_screens,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Screen | None:
+    """Poll until a screen that wasn't in `before` shows up: the display that was just turned on."""
+    known = set(before)
+    waited = 0.0
+    while True:
+        new = [s for s in lister() if s not in known]
+        if new or waited >= timeout_s:
+            return max(new, key=lambda s: s.width * s.height) if new else None
+        sleep(0.5)
+        waited += 0.5
+
+
 # ---------- Turning the virtual display on/off (optional) ----------
 
 
 def helper_script_path() -> Path:
     base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
     return base / "vrec" / "virtual-display.ps1"
+
+
+def helper_pattern_path() -> Path:
+    """Where the adapter name pattern chosen at install time is kept (to read the device state)."""
+    return helper_script_path().with_name("virtual-display-pattern.txt")
 
 
 def helper_script(device_pattern: str) -> str:
@@ -158,6 +180,31 @@ def list_display_devices(run: Runner = _run) -> list[str]:
         ]
     )
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def virtual_display_enabled(run: Runner = _run) -> bool | None:
+    """Whether the virtual display adapter is currently enabled (no admin needed).
+
+    None when it can't be told: helper not installed, or no adapter matches its pattern.
+    """
+    try:
+        pattern = helper_pattern_path().read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    quoted = pattern.replace("'", "''")
+    result = run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            f"Get-PnpDevice -Class Display | Where-Object {{ $_.FriendlyName -like '{quoted}' }} "
+            "| ForEach-Object { $_.Status }",
+        ]
+    )
+    statuses = [line.strip().lower() for line in result.stdout.splitlines() if line.strip()]
+    if not statuses:
+        return None
+    return "ok" in statuses
 
 
 def is_admin() -> bool:
@@ -187,6 +234,7 @@ def install_helper(device_pattern: str, run: Runner = _run) -> Path:
     script = helper_script_path()
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text(helper_script(device_pattern), encoding="utf-8", newline="")
+    helper_pattern_path().write_text(device_pattern, encoding="utf-8")
     for task, state in ((TASK_ON, "on"), (TASK_OFF, "off")):
         # A one-time trigger in the past: the task never runs by itself, only on demand.
         result = run(
@@ -206,6 +254,7 @@ def uninstall_helper(run: Runner = _run) -> None:
     for task in (TASK_ON, TASK_OFF):
         run(["schtasks", "/Delete", "/F", "/TN", task])
     helper_script_path().unlink(missing_ok=True)
+    helper_pattern_path().unlink(missing_ok=True)
 
 
 def helper_installed(run: Runner = _run) -> bool:

@@ -68,6 +68,7 @@ class Batch:
     initial_window_state: str | None = None
     initial_bounds: WindowBounds | None = None
     display_turned_on: bool = False
+    virtual_screen: display.Screen | None = None  # the screen this run turned on
 
 
 def run(
@@ -254,17 +255,19 @@ def _virtual_display_on(batch: Batch) -> None:
     """Turn the virtual display on for the batch (feature manage_virtual_display, off by default)."""
     if not batch.features.enabled("manage_virtual_display"):
         return
-    wanted = batch.settings.display_screen
-    if display.pick_screen(display.list_screens(), wanted):
+    # Ask the device itself: another physical screen must not be mistaken for the virtual one.
+    if display.virtual_display_enabled():
         return  # already on: leave it as the user had it
+    before = display.list_screens()
     try:
         display.set_virtual_display(True)
     except VrecError as e:
         warn(str(e))
         return
     batch.display_turned_on = True
-    screen = display.wait_for_screen(wanted)
+    screen = display.wait_for_new_screen(before)
     if screen:
+        batch.virtual_screen = screen
         print(f"Virtual display turned on: {screen.describe()}.")
     else:
         warn("The virtual display didn't show up within 15 s. Continuing anyway.")
@@ -285,7 +288,9 @@ def _place_window(batch: Batch) -> None:
     """Move Chrome onto the virtual screen (feature auto_place_window)."""
     if not batch.features.enabled("auto_place_window"):
         return
-    screen = display.pick_screen(display.list_screens(), batch.settings.display_screen)
+    screen = batch.virtual_screen or display.pick_screen(
+        display.list_screens(), batch.settings.display_screen
+    )
     if screen is None:
         warn(
             "No virtual screen found to move Chrome to: recording on the screen it is on. "

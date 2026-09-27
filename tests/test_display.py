@@ -156,3 +156,47 @@ def test_list_screens_on_this_machine():
         assert sum(s.primary for s in screens) == 1
     else:
         assert screens == []
+
+
+def test_wait_for_new_screen_returns_the_screen_that_appeared():
+    answers = iter([[MAIN, SIDE], [MAIN, SIDE, VIRTUAL]])
+    sleeps: list[float] = []
+    new = display.wait_for_new_screen([MAIN, SIDE], lister=lambda: next(answers), sleep=sleeps.append)
+    assert new == VIRTUAL
+    assert sleeps == [0.5]
+
+
+def test_wait_for_new_screen_gives_up():
+    assert (
+        display.wait_for_new_screen([MAIN], timeout_s=1, lister=lambda: [MAIN], sleep=lambda s: None) is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("stdout", "expected"),
+    [("OK\r\n", True), ("Error\r\n", False), ("Unknown\r\nOK\r\n", True), ("", None)],
+)
+def test_virtual_display_enabled(monkeypatch, tmp_path, stdout, expected):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    display.helper_pattern_path().parent.mkdir(parents=True)
+    display.helper_pattern_path().write_text("*Virtual*", encoding="utf-8")
+    run = FakeRunner(stdout=stdout)
+    assert display.virtual_display_enabled(run=run) is expected
+    assert "-like '*Virtual*'" in run.calls[0][-1]
+
+
+def test_virtual_display_state_unknown_without_helper(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    run = FakeRunner(stdout="OK")
+    assert display.virtual_display_enabled(run=run) is None
+    assert run.calls == []
+
+
+def test_install_writes_and_uninstall_removes_the_pattern(monkeypatch, tmp_path):
+    monkeypatch.setattr(display.sys, "platform", "win32")
+    monkeypatch.setattr(display, "is_admin", lambda: True)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    display.install_helper("*Virtual Display*", run=FakeRunner())
+    assert display.helper_pattern_path().read_text(encoding="utf-8") == "*Virtual Display*"
+    display.uninstall_helper(run=FakeRunner())
+    assert not display.helper_pattern_path().exists()
