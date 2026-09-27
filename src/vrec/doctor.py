@@ -16,7 +16,7 @@ from pathlib import Path
 
 import obsws_python as obs
 
-from vrec import obs_control
+from vrec import display, obs_control
 from vrec.config import Paths, Settings, load_settings
 from vrec.console import first_line
 from vrec.errors import VrecError
@@ -277,6 +277,61 @@ def check_chrome_debug_port(ctx: _Context) -> Check:
     return Check("ok", "Chrome debugging port", detail=data.get("Browser", "reachable"))
 
 
+def check_virtual_screen(ctx: _Context) -> Check:
+    """The screen the recording Chrome window goes to."""
+    title = "Virtual screen"
+    screens = display.list_screens()
+    if not screens:
+        return Check("info", title, detail="Screens can only be listed on Windows.")
+    wanted = ctx.settings.display_screen
+    if ctx.features.enabled("manage_virtual_display"):
+        state = display.virtual_display_enabled()
+        if state is None:
+            return Check(
+                "fail",
+                title,
+                detail="manage_virtual_display is on, but its helper isn't installed or matches no adapter.",
+                hint="Run once from an administrator terminal: vrec --install-display-helper",
+            )
+        if not state:
+            return Check("info", title, detail="Off right now: vrec turns it on for each batch.")
+    screen = display.pick_screen(screens, wanted)
+    if screen:
+        detail = f"{screen.describe()}."
+        if not ctx.features.enabled("auto_place_window"):
+            detail += " auto_place_window is off: move Chrome there by hand."
+        others = [s for s in screens if not s.primary]
+        hint = ""
+        if wanted.strip().lower() in ("", "auto") and (len(others) > 1 or screen.width < 2560):
+            hint = (
+                'If this isn\'t your virtual display, set [display] screen in config.toml (e.g. "DISPLAY3").'
+            )
+        return Check("ok", title, detail=detail, hint=hint)
+    return Check(
+        "warn",
+        title,
+        detail=f'No screen matches [display] screen = "{wanted}" ({len(screens)} screen(s) found).',
+        hint="Turn the virtual display on, or see docs/virtual-display.md.",
+    )
+
+
+def check_audio_routing(ctx: _Context) -> Check:
+    """How the video's sound reaches VB-CABLE."""
+    title = "Video sound"
+    output = ctx.settings.audio_output
+    if ctx.features.enabled("audio_sink"):
+        return Check(
+            "info",
+            title,
+            detail=f'Sent to "{output}" by vrec for the recorded page only (checked at each video).',
+        )
+    return Check(
+        "info",
+        title,
+        detail="audio_sink is off: Chrome must be routed to CABLE Input in the Windows volume mixer.",
+    )
+
+
 CHECKS: list[Callable[[_Context], Check]] = [
     check_data_dir,
     check_config,
@@ -290,7 +345,9 @@ CHECKS: list[Callable[[_Context], Check]] = [
     check_resolution,
     check_scene_capture,
     check_vb_cable,
+    check_audio_routing,
     check_chrome_debug_port,
+    check_virtual_screen,
 ]
 
 _LABELS = {"ok": "[ OK ]", "warn": "[WARN]", "fail": "[FAIL]", "info": "[INFO]"}

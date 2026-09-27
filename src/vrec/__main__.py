@@ -6,7 +6,13 @@ import argparse
 import contextlib
 import os
 import sys
+import traceback
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from vrec.config import Paths
+    from vrec.features import FeatureSet
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -45,6 +51,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_schedule_arguments(parser)
     _add_selection_arguments(parser)
     _add_display_arguments(parser)
+    _add_diagnostic_arguments(parser)
     return parser
 
 
@@ -55,6 +62,12 @@ def _add_selection_arguments(parser: argparse.ArgumentParser) -> None:
     )
     group.add_argument(
         "--only", metavar="LIST", default=None, help="record exactly these numbers, e.g. 3,1,5-8, no menu"
+    )
+
+
+def _add_diagnostic_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--doctor", action="store_true", help="check your setup (OBS, Chrome, disk...) without recording"
     )
 
 
@@ -160,7 +173,7 @@ def _add_schedule_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _run(args: argparse.Namespace) -> int:
+def _run(args: argparse.Namespace, argv: list[str]) -> int:
     if args.schedule is not None:
         return _run_schedule(args)
     if args.install_display_helper or args.uninstall_display_helper:
@@ -174,22 +187,55 @@ def _run(args: argparse.Namespace) -> int:
 
     config_path = args.config or (data_dir / "config.toml")
 
+    from vrec.config import Paths
+    from vrec.console import first_line
+    from vrec.errors import VrecError
+    from vrec.features import FeatureSet, load_features
+    from vrec.logs import capture
+
+    paths = Paths(data_dir=data_dir, config=config_path)
     try:
-        from vrec import app
+        features, _warnings = load_features(paths.features)  # the app and the doctor report the warnings
+    except VrecError:
+        features = FeatureSet()
+
+    with capture(data_dir, argv, features) as log:
+        try:
+            return _dispatch(args, paths, features)
+        except VrecError as e:
+            print(str(e))
+            return 1
+        except KeyboardInterrupt:
+            print("Stopped.")
+            return 130
+        except Exception as e:
+            log.log_exception(e)
+            if log.path:
+                print(f"Unexpected error: {first_line(e)}. Details in {log.path}")
+            else:
+                traceback.print_exc()
+            return 1
+
+
+def _dispatch(args: argparse.Namespace, paths: Paths, features: FeatureSet) -> int:
+    """Run the doctor or a recording session (inside the run log)."""
+    try:
+        from vrec import app, doctor
     except ImportError:
         print("Missing dependencies. Run scripts\\windows\\install.bat (or: pip install -e .).")
         return 1
 
-    from vrec.errors import VrecError
+    if args.doctor:
+        from vrec.config import Settings, load_settings
+        from vrec.errors import VrecError
 
-    try:
-        return app.run(data_dir, config_path, args.test, all_videos=args.all, only=args.only)
-    except VrecError as e:
-        print(str(e))
-        return 1
-    except KeyboardInterrupt:
-        print("Stopped.")
-        return 130
+        try:
+            settings = load_settings(paths.config)
+        except VrecError:
+            settings = Settings()  # the doctor reports the config problem itself
+        return doctor.run_doctor(settings, paths, features)
+
+    return app.run(paths.data_dir, paths.config, args.test, all_videos=args.all, only=args.only)
 
 
 def _run_schedule(args: argparse.Namespace) -> int:
@@ -216,8 +262,9 @@ def _run_schedule(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
+    resolved_argv = list(argv) if argv is not None else sys.argv[1:]
     args = parser.parse_args(argv)
-    code = _run(args)
+    code = _run(args, resolved_argv)
     if args.pause_on_exit:
         with contextlib.suppress(EOFError):
             input("\nPress Enter to close.")

@@ -6,6 +6,7 @@ import base64
 import contextlib
 import io
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,6 +20,9 @@ from vrec.config import Paths, Settings
 from vrec.errors import VrecError
 
 _AUDIO_SOURCE_KIND = "wasapi_input_capture"
+
+# obsws-python logs a full traceback when OBS isn't reachable; vrec reports it in one line instead.
+logging.getLogger("obsws_python").setLevel(logging.CRITICAL)
 
 
 def get_password(paths: Paths) -> tuple[str, bool]:

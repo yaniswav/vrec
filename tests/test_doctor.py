@@ -14,6 +14,18 @@ from vrec.errors import VrecError
 from vrec.features import FeatureSet
 
 
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chrome's debug port is never really contacted: tests that need it install their own fake."""
+    import urllib.error
+    import urllib.request
+
+    def refuse(url: str, timeout: float = 3) -> None:
+        raise urllib.error.URLError("connection refused (test)")
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+
+
 class FakeClient:
     """Stand-in for obsws_python.ReqClient, covering only what doctor.py calls."""
 
@@ -161,6 +173,7 @@ def test_check_config_invalid_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 def test_check_features_all_enabled_is_info(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = _ctx(tmp_path, None, monkeypatch)
+    ctx.features.set("manage_virtual_display", True)  # the only feature that is off by default
     check = doctor.check_features(ctx)
     assert check.status == "info"
     assert "All features enabled" in check.detail
@@ -483,3 +496,52 @@ def test_run_doctor_reports_unexpected_exception_as_a_failed_check(
 
     assert code == 1
     assert "kaboom" in capsys.readouterr().out
+
+
+# check_virtual_screen / check_audio_routing
+
+_MAIN = doctor.display.Screen("DISPLAY1", 0, 0, 2560, 1440, primary=True)
+_VIRTUAL = doctor.display.Screen("DISPLAY3", 2560, 0, 3840, 2160, primary=False)
+
+
+def test_virtual_screen_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(doctor.display, "list_screens", lambda: [_MAIN, _VIRTUAL])
+    check = doctor.check_virtual_screen(_ctx(tmp_path, None, monkeypatch))
+    assert check.status == "ok"
+    assert "DISPLAY3" in check.detail
+
+
+def test_virtual_screen_missing_warns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(doctor.display, "list_screens", lambda: [_MAIN])
+    check = doctor.check_virtual_screen(_ctx(tmp_path, None, monkeypatch))
+    assert check.status == "warn"
+
+
+def test_virtual_screen_managed_needs_the_helper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(doctor.display, "list_screens", lambda: [_MAIN])
+    ctx = _ctx(tmp_path, None, monkeypatch)
+    ctx.features.set("manage_virtual_display", True)
+    monkeypatch.setattr(doctor.display, "virtual_display_enabled", lambda: None)
+    assert doctor.check_virtual_screen(ctx).status == "fail"
+    monkeypatch.setattr(doctor.display, "virtual_display_enabled", lambda: False)
+    assert doctor.check_virtual_screen(ctx).status == "info"
+    monkeypatch.setattr(doctor.display, "virtual_display_enabled", lambda: True)
+    monkeypatch.setattr(doctor.display, "list_screens", lambda: [_MAIN, _VIRTUAL])
+    assert doctor.check_virtual_screen(ctx).status == "ok"
+
+
+def test_virtual_screen_auto_on_a_small_side_monitor_gives_a_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    side = doctor.display.Screen("DISPLAY2", -1920, 0, 1920, 1080, primary=False)
+    monkeypatch.setattr(doctor.display, "list_screens", lambda: [_MAIN, side])
+    check = doctor.check_virtual_screen(_ctx(tmp_path, None, monkeypatch))
+    assert check.status == "ok"
+    assert "[display] screen" in check.hint
+
+
+def test_audio_routing_info(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = _ctx(tmp_path, None, monkeypatch)
+    assert "CABLE Input" in doctor.check_audio_routing(ctx).detail
+    ctx.features.set("audio_sink", False)
+    assert "volume mixer" in doctor.check_audio_routing(ctx).detail

@@ -78,7 +78,7 @@ def test_tee_note_appends_to_log_only_not_the_console() -> None:
 
 
 def test_capture_creates_a_log_file_with_a_header(tmp_path: Path) -> None:
-    with capture(tmp_path, ["--test"], FeatureSet()) as log:
+    with capture(tmp_path, ["--test"], FeatureSet({"manage_virtual_display": True})) as log:
         assert log.path is not None
         assert log.path.parent == tmp_path / "logs"
         print("hello from the run")
@@ -178,7 +178,7 @@ def test_unhandled_exception_is_logged_with_a_short_console_summary(
 ) -> None:
     from vrec import app as app_module
 
-    def boom(data_dir: Path, config_path: Path, test_mode: bool) -> int:
+    def boom(*args: object, **kwargs: object) -> int:
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(app_module, "run", boom)
@@ -201,11 +201,13 @@ def test_unhandled_exception_prints_traceback_when_logging_is_disabled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from vrec import app as app_module
-    from vrec.features import save as save_features
+    from vrec.features import save_features
 
-    save_features(tmp_path / "features.json", FeatureSet(overrides={"run_logs": False}))
+    features = FeatureSet()
+    features.set("run_logs", False)
+    save_features(tmp_path / "features.toml", features)
 
-    def boom(data_dir: Path, config_path: Path, test_mode: bool) -> int:
+    def boom(*args: object, **kwargs: object) -> int:
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(app_module, "run", boom)
