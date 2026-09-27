@@ -27,6 +27,7 @@ class Settings:
     pause_below_s: float = 2
     resume_at_s: float = 10
     max_stall_s: float = 300
+    max_height: int = 0
     max_wall_factor: float = 3
     max_wall_extra_s: float = 600
 
@@ -86,6 +87,9 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
         "pause_below": ("pause_below_s", float),
         "resume_at": ("resume_at_s", float),
         "max_stall": ("max_stall_s", float),
+    },
+    "quality": {
+        "max_height": ("max_height", int),
     },
 }
 

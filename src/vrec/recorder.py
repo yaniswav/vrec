@@ -13,7 +13,7 @@ import obsws_python as obs
 from playwright.sync_api import Page
 
 from vrec import history
-from vrec.browser import load_js
+from vrec.browser import document_script, load_js
 from vrec.config import Settings
 from vrec.console import human_duration, warn
 from vrec.naming import FAILED_BLACK_PREFIX, INCOMPLETE_PREFIX, TEST_PREFIX, clean_title, rename_recording
@@ -22,6 +22,10 @@ from vrec.obs_control import AudioMeter, is_black_frame
 JS_PLAY = "() => { window.__vrecVideo.play().catch(() => {}); }"
 JS_PAUSE = "() => { window.__vrecVideo.pause(); }"
 _JS_GET_FORCED_QUALITY = "() => window.__vrecForcedQuality || null"
+
+# While buffering, resume once the reserve has stopped growing for this long: some players
+# cap their buffer by size, so at high bitrates the resume threshold may never be reached.
+_PLATEAU_S = 5
 
 
 class StopReason(StrEnum):
@@ -49,6 +53,7 @@ class RecordingResult:
     audio_ok: bool | None = None
     file: Path | None = None
     quality: str = ""
+    target_height: int = 0  # height vrec asked the player for (0 = unknown)
     max_resolution: tuple[int, int] = field(default=(0, 0))
     buffering_pauses: int = 0
 
@@ -64,11 +69,14 @@ def record_one(
     url: str,
     title: str | None,
     test_mode: bool,
+    max_height: int = 0,
 ) -> RecordingResult:
     result = RecordingResult(number=number)
     print(f"[{number}/{total}] {title or url}")
 
-    page.goto(url, wait_until="domcontentloaded", timeout=60000)
+    # The quality filter reads this cap when the player fetches its list of qualities.
+    with document_script(page, f"window.__vrecMaxHeight = {int(max_height)};"):
+        page.goto(url, wait_until="domcontentloaded", timeout=60000)
     duration = page.evaluate(load_js("pick_video.js"))
     result.title = title or clean_title(page.title())
     print(f"   {result.title if not title else url}  -  duration {human_duration(duration)}")
@@ -84,12 +92,13 @@ def record_one(
         result.quality = forced
         print(f"   Quality: {forced} forced from the start")
     else:
-        quality_info = page.evaluate(load_js("max_quality.js"))
+        quality_info = page.evaluate(load_js("max_quality.js"), max_height)
         if quality_info["method"]:
             result.quality = f"{quality_info['target']}p" if quality_info["target"] else "max"
             print(f"   Quality: {result.quality} (via {quality_info['method']})")
         else:
             warn("Couldn't find a quality selector: the site decides on its own (auto)")
+    result.target_height = int(quality_info["target"] or 0)
 
     # Rewinding makes the player reload the video, now at the chosen quality.
     page.wait_for_timeout(int(settings.fullscreen_settle_s * 1000))
@@ -129,6 +138,7 @@ def record_one(
     resumes = 0
     next_black_check = start + 3
     buffering, buffering_start, paused_time, pause_allowed = False, 0.0, 0.0, True
+    best_buffer, last_growth = 0.0, 0.0
 
     while True:
         page.wait_for_timeout(500)
@@ -158,12 +168,15 @@ def record_one(
         # Buffering: both the video and the recording are paused.
         if buffering:
             waited = now - buffering_start
+            if state["buffer"] > best_buffer + 0.5:
+                best_buffer, last_growth = state["buffer"], now
+            plateaued = now - last_growth >= _PLATEAU_S and state["buffer"] >= settings.pause_below_s + 2
             print(
                 f"\r   Buffering... {state['buffer']:4.1f} s in reserve (recording paused)   ",
                 end="",
                 flush=True,
             )
-            if enough_buffered:
+            if enough_buffered or plateaued:
                 client.resume_record()
                 page.evaluate(JS_PLAY)
                 paused_time += waited
@@ -183,6 +196,7 @@ def record_one(
             try:
                 client.pause_record()
                 buffering, buffering_start = True, now
+                best_buffer, last_growth = state["buffer"], now
                 result.buffering_pauses += 1
                 print()
             except Exception:
@@ -263,6 +277,16 @@ def record_one(
         warn(f"Couldn't rename the recording, it keeps its OBS name: {result.file.name}")
 
     return result
+
+
+def lower_quality_retry_cap(result: RecordingResult, test_mode: bool) -> int:
+    """Height cap for one retry after a stalled load (0 = don't retry).
+
+    The cap sits just below the height that stalled, so the next lower quality is picked.
+    """
+    if test_mode or result.reason != StopReason.STALLED or result.target_height <= 0:
+        return 0
+    return result.target_height - 1
 
 
 def status_text(result: RecordingResult) -> str:

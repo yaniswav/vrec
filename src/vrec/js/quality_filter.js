@@ -3,8 +3,21 @@
     // list of available qualities (HLS or DASH), only the best one is kept, so
     // it loads the max quality from the first second. Detected by content,
     // regardless of the file's URL.
+    // window.__vrecMaxHeight (set by vrec before each page load, 0 = no cap) limits
+    // the height of the kept variant; it is read when the manifest arrives.
     if (window.__vrecQualityFilter) return;
     window.__vrecQualityFilter = true;
+
+    // Best height within the cap; if every variant is above the cap, the smallest one.
+    // Returns 0 when no height is known.
+    const chooseHeight = heights => {
+        const known = heights.filter(h => h > 0);
+        if (!known.length) return 0;
+        const cap = window.__vrecMaxHeight || 0;
+        if (!cap) return Math.max(...known);
+        const fitting = known.filter(h => h <= cap);
+        return fitting.length ? Math.max(...fitting) : Math.min(...known);
+    };
 
     const filterHls = t => {
         if (!t.includes('#EXT-X-STREAM-INF')) return null;
@@ -18,13 +31,13 @@
             i = j;
         }
         if (variants.length < 2) return null;
-        const maxHeight = Math.max(...variants.map(v => v.h));
-        const keep = maxHeight ? variants.filter(v => v.h === maxHeight)
-                               : [variants.reduce((a, b) => b.bitrate > a.bitrate ? b : a)];
+        const target = chooseHeight(variants.map(v => v.h));
+        const keep = target ? variants.filter(v => v.h === target)
+                            : [variants.reduce((a, b) => b.bitrate > a.bitrate ? b : a)];
         if (keep.length === variants.length) return null;
         const remove = new Set();
         for (const v of variants) if (!keep.includes(v)) for (let k = v.start; k <= v.end; k++) remove.add(k);
-        window.__vrecForcedQuality = maxHeight ? keep[0].w + 'x' + keep[0].h : 'max bitrate';
+        window.__vrecForcedQuality = target ? keep[0].w + 'x' + keep[0].h : 'max bitrate';
         return lines.filter((_, k) => !remove.has(k)).join('\n') + '\n';
     };
 
@@ -34,10 +47,10 @@
         const representations = [...t.matchAll(pattern)];
         const heights = new Set(representations.map(m => +m[1]));
         if (heights.size < 2) return null;
-        const maxHeight = Math.max(...heights);
-        for (const m of representations.reverse()) if (+m[1] < maxHeight) t = t.slice(0, m.index) + t.slice(m.index + m[0].length);
-        const w = t.match(new RegExp('<Representation\\b[^>]*?\\bwidth="(\\d+)"[^>]*?\\bheight="' + maxHeight + '"'));
-        window.__vrecForcedQuality = w ? w[1] + 'x' + maxHeight : maxHeight + 'p';
+        const target = chooseHeight([...heights]);
+        for (const m of representations.reverse()) if (+m[1] !== target) t = t.slice(0, m.index) + t.slice(m.index + m[0].length);
+        const w = t.match(new RegExp('<Representation\\b[^>]*?\\bwidth="(\\d+)"[^>]*?\\bheight="' + target + '"'));
+        window.__vrecForcedQuality = w ? w[1] + 'x' + target : target + 'p';
         return t;
     };
 

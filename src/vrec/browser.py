@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.resources
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from functools import cache
 
 from playwright.sync_api import Browser, Page, sync_playwright
@@ -54,3 +54,16 @@ def window_state(browser: Browser, page: Page, state: str | None = None) -> str:
             )
         time.sleep(1)
     return previous
+
+
+@contextmanager
+def document_script(page: Page, source: str) -> Iterator[None]:
+    """Run `source` in every document the page loads while the block is active (CDP-level init script)."""
+    session = page.context.new_cdp_session(page)
+    script_id = session.send("Page.addScriptToEvaluateOnNewDocument", {"source": source})["identifier"]
+    try:
+        yield
+    finally:
+        with suppress(Exception):
+            session.send("Page.removeScriptToEvaluateOnNewDocument", {"identifier": script_id})
+            session.detach()

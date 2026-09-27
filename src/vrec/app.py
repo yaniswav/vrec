@@ -16,7 +16,13 @@ from vrec.errors import VrecError
 from vrec.lock import InstanceLock
 from vrec.naming import INTERRUPTED_PREFIX, rename_recording
 from vrec.playlist import read_playlist
-from vrec.recorder import RecordingResult, history_status, record_one, status_text
+from vrec.recorder import (
+    RecordingResult,
+    history_status,
+    lower_quality_retry_cap,
+    record_one,
+    status_text,
+)
 
 
 def run(data_dir: Path, config_path: Path, test_mode: bool) -> int:
@@ -98,8 +104,35 @@ def _run_locked(paths: Paths, settings: Settings, test_mode: bool) -> int:
                     had_error = False
                     try:
                         result = record_one(
-                            page, client, meter, scene, settings, i, len(selection), url, title, test_mode
+                            page,
+                            client,
+                            meter,
+                            scene,
+                            settings,
+                            i,
+                            len(selection),
+                            url,
+                            title,
+                            test_mode,
+                            settings.max_height,
                         )
+                        retry_cap = lower_quality_retry_cap(result, test_mode)
+                        if retry_cap:
+                            print(f"   -> {status_text(result)}")
+                            print(f"   Retrying once below {result.target_height}p...\n")
+                            result = record_one(
+                                page,
+                                client,
+                                meter,
+                                scene,
+                                settings,
+                                i,
+                                len(selection),
+                                url,
+                                title,
+                                test_mode,
+                                retry_cap,
+                            )
                     except Exception as e:
                         had_error = True
                         path = obs_control.stop_if_recording(client)

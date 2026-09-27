@@ -52,3 +52,9 @@ pause_below = 2
 resume_at = 10
 # Give up on a video whose loading stays stalled for this many seconds.
 max_stall = 300
+
+[quality]
+# Highest video height (in pixels) vrec asks the player for. 0 = no cap, always the best.
+# Example: 2160 keeps 4K and below. If a video stalls while loading, vrec retries it once
+# at the next lower quality anyway, whatever this value.
+max_height = 0
