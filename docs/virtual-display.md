@@ -73,6 +73,62 @@ Get-PnpDevice -Class Display -FriendlyName '*Virtual*' | Enable-PnpDevice -Confi
 Adjust the `-FriendlyName` filter to match what `Get-PnpDevice -Class Display` actually showed you —
 it may not contain the word "Virtual" depending on the driver.
 
+## Choosing the right screen
+
+By default, `[display] screen = "auto"` in `config.toml` picks the largest screen that isn't your main
+one. If you also have a **real second monitor** connected, "auto" can pick that monitor instead of the
+virtual display whenever the virtual display happens to be off (for example, right before
+`manage_virtual_display` turns it on) — vrec doesn't guess which one you meant from the screen list
+alone. If you have both:
+
+- set `[display] screen` in `config.toml` to a 1-based screen index (e.g. `"2"`) or part of the
+  virtual display's name (e.g. `"DISPLAY3"`), instead of leaving it on `"auto"`;
+- run `vrec --doctor` to see which screen the "Virtual screen" check would actually use.
+
+## Turning the virtual display on and off automatically
+
+If you'd rather not remember to turn the virtual display on and off by hand, vrec can do it for you
+around each batch, through the `manage_virtual_display` feature (off by default — see
+[Features on/off](../README.md#features-onoff) in the README).
+
+1. Open a terminal **as administrator** and run, once:
+
+   ```
+   vrec --install-display-helper
+   ```
+
+   This matches display adapters whose name contains "Virtual" by default; pass a different pattern if
+   yours is named differently, for example:
+
+   ```
+   vrec --install-display-helper "*Virtual Display Driver*"
+   ```
+
+   This writes a small PowerShell script and registers two on-demand Windows Task Scheduler tasks
+   (under `\vrec\`) that run with the highest privileges to enable/disable the matching adapter(s).
+   This is the only step that needs administrator rights — vrec triggers those tasks afterwards
+   (`schtasks /Run`) with no elevation prompt.
+
+2. Turn the feature on:
+
+   ```
+   vrec --enable manage_virtual_display
+   ```
+
+vrec then turns the virtual display on before a batch (only if it was off) and off again afterwards —
+only if this run was the one that turned it on; if you had already turned it on yourself, vrec leaves
+it as it found it. It tells the virtual display apart from a real second monitor by asking Windows for
+that adapter's own status, not by guessing from the screen list (see
+[Choosing the right screen](#choosing-the-right-screen) above).
+
+To remove the scheduled tasks and the helper script:
+
+```
+vrec --uninstall-display-helper
+```
+
+Both commands only work on Windows.
+
 ## GPU driver updates
 
 Before updating your NVIDIA (or other GPU) drivers, uninstall or disable the virtual display first,

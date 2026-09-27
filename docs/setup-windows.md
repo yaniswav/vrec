@@ -13,14 +13,30 @@ Once you have one set up, in Windows display settings:
 - Virtual display: **Extend desktop to this display**, 3840 x 2160, 60 Hz.
 - Your real screen: **Make this my main display**.
 
+If you also have a real second monitor connected, see
+[Choosing the right screen](virtual-display.md#choosing-the-right-screen) in virtual-display.md —
+`[display] screen = "auto"` (the default) can otherwise pick that monitor instead of the virtual one.
+
 ## 2. VB-CABLE (virtual audio cable)
 
-VB-CABLE lets OBS capture Chrome's audio without it ever reaching your speakers.
+VB-CABLE lets OBS capture the video's audio without it ever reaching your speakers.
 
 1. Download "VB-CABLE Driver" from [vb-audio.com](https://vb-audio.com/Cable/) and unzip it.
 2. Right-click `VBCABLE_Setup_x64.exe` and choose **Run as administrator**, then **Install Driver**.
 3. Restart your PC.
-4. Play any video in the Chrome window opened by `launch_chrome.bat` (see step 4 below), then open
+
+By default, vrec sends only the recorded video's own sound to VB-CABLE's playback side ("CABLE
+Input") itself, for each video (feature `audio_sink`), using a brief microphone permission it grants
+itself on the page and revokes right after — it only needs that permission to look up the audio
+output device by name, it never actually reads or uses the microphone. With this on (the default),
+you shouldn't need to touch the Windows volume mixer at all.
+
+### Fallback: routing Chrome through the Windows volume mixer
+
+Only needed if you turn the `audio_sink` feature off, or vrec warns something like `Couldn't send the
+video's sound to CABLE Input (...): using the Windows audio setup.` for a particular site:
+
+1. Play any video in the Chrome window opened by `launch_chrome.bat` (see step 5 below), then open
    **Settings > System > Sound > Volume mixer**, find the Chrome entry, and set its output to
    **CABLE Input**. Windows remembers this per application afterwards.
 
@@ -50,8 +66,8 @@ be muted too. To get its sound back, go to the volume mixer and set that Chrome 
    Recording quality must not be "Same as stream" because vrec needs to be able to pause the OBS
    recording independently while a video buffers; that mode does not support pausing.
 
-vrec manages audio automatically: it creates a "Chrome Audio (VB-CABLE)" source, mutes your desktop
-audio and microphone while recording, and restores everything afterwards.
+vrec manages audio automatically (feature `obs_audio_routing`): it creates a "Chrome Audio (VB-CABLE)"
+source, mutes your desktop audio and microphone while recording, and restores everything afterwards.
 
 ### 360-degree videos
 
@@ -69,9 +85,12 @@ a headset.
 1. Double-click `scripts\windows\launch_chrome.bat`. It opens a separate Chrome window on a dedicated
    profile (so it doesn't interfere with your everyday browsing).
 2. The first time, log in to any site you need to, in that window.
-3. Move the window to the virtual display: click it, then press **Win + Shift + Right Arrow** (repeat
-   until it lands on the virtual display).
-4. Maximize the window. Never minimize it while vrec is running — a minimized window can't be
-   captured or controlled correctly.
+3. By default, vrec moves this window to the virtual display and maximizes it there itself, before
+   each run, and puts it back afterwards (feature `auto_place_window`). If you turn that feature off,
+   or it doesn't work for you, do it by hand instead: click the window, press **Win + Shift + Right
+   Arrow** (repeat until it lands on the virtual display), then maximize it.
+4. Never minimize the window while vrec is running — a minimized window can't be captured or
+   controlled correctly.
 
-You're ready to go — see the main [README](../README.md#quick-start) for day-to-day usage.
+You're ready to go — run `vrec --doctor` to check everything above is in place, then see the main
+[README](../README.md#quick-start) for day-to-day usage.
