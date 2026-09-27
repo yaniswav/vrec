@@ -2,6 +2,27 @@
 
 Every message vrec can show you, what causes it, and how to fix it.
 
+Run `vrec --doctor` first — it checks OBS, Chrome, disk space, VB-CABLE, audio routing and the virtual
+screen without recording anything, and often points straight at the fix. Include its output, and the
+relevant excerpt from the log file in `data\logs`, in any bug report.
+
+## `vrec --doctor`
+
+Each check prints `[ OK ]`, `[WARN]`, `[FAIL]`, or `[INFO]`, an optional detail, and (for anything that
+isn't `[ OK ]`) a `->` hint on how to fix it. It exits with a non-zero code if any check failed. It
+never starts a recording or changes OBS/Chrome state (beyond, like a normal run, possibly saving the
+OBS WebSocket password the first time it's typed in), so it's safe to run at any time, including while
+a normal run is waiting at its "press Enter to start" prompt.
+
+## Run logs (`data\logs`)
+
+When the `run_logs` feature is on (the default), every run — recording, `--test`, or `--doctor` —
+writes a log file to `data\logs\vrec-YYYYMMDD-HHMMSS.log`: a copy of everything printed to the console,
+with in-place progress lines collapsed to their last state, every prompt and its answer (a password is
+written as `***`, never the real value), and, if the run crashed unexpectedly, the full traceback. The
+last 20 log files are kept; older ones are deleted automatically. Attach the relevant excerpt (not the
+whole file) to a bug report.
+
 ## Startup and connections
 
 ### "Chrome not found: run launch_chrome.bat first"
@@ -45,6 +66,12 @@ If that leftover file itself can't be read (for example it was left half-written
 "Couldn't read the leftover OBS audio settings file: ignoring it." and deletes it instead of trying to
 use it; your OBS audio sources are left as they are, so double-check mute states in OBS in that case.
 
+### "Unexpected error: ... Details in data\logs\vrec-....log"
+
+Something crashed that vrec didn't anticipate. With `run_logs` on (the default), the full traceback is
+in that log file — attach it to a bug report. With `run_logs` off, the traceback is printed directly to
+the console instead.
+
 ## Audio
 
 ### "VB-CABLE not found"
@@ -52,9 +79,19 @@ use it; your OBS audio sources are left as they are, so double-check mute states
 VB-CABLE isn't installed, or the PC hasn't been restarted since installing it. See
 [setup-windows.md](setup-windows.md#2-vb-cable-virtual-audio-cable).
 
+### "Couldn't send the video's sound to CABLE Input (...): using the Windows audio setup."
+
+The `audio_sink` feature (on by default) couldn't set this page's audio output automatically — often
+because the site blocks `setSinkId`, or the page has no audio yet at that point. vrec falls back to
+whatever the Windows volume mixer has Chrome routed to; see the fallback setup in
+[setup-windows.md](setup-windows.md#fallback-routing-chrome-through-the-windows-volume-mixer).
+Recording continues either way.
+
 ### "No audio detected" / Audio: NONE
 
-Play any video in the Chrome window opened by `launch_chrome.bat`, and check in the Windows volume
+With `audio_sink` on (the default), check `vrec --doctor`'s "Video sound" line, and look for a
+"Couldn't send the video's sound to ..." warning during that recording (see above). With `audio_sink`
+off, play any video in the Chrome window opened by `launch_chrome.bat`, and check in the Windows volume
 mixer that its output is set to **CABLE Input**.
 
 ## Video / page
@@ -152,6 +189,61 @@ what's going on (a site change, a network issue) before running it again.
 vrec renames each freshly recorded file to match the video's title. If that rename fails — usually
 because something else (antivirus, an indexer, OBS itself) is still holding the file — the recording is
 kept under the name OBS gave it instead of being lost; look for it by date in the OBS recording folder.
+
+## Display & window placement
+
+### "No virtual screen found to move Chrome to: recording on the screen it is on. Check [display] screen in config.toml, or move it by hand (Win+Shift+Arrow)."
+
+`auto_place_window` (on by default) couldn't find a screen to move Chrome to: `[display] screen`
+matches none of the screens Windows currently reports. Turn the virtual display on, check
+`[display] screen` in `config.toml`, or see [virtual-display.md](virtual-display.md). Recording
+continues on whichever screen the window is already on.
+
+### "Couldn't move Chrome to ... Move it by hand (Win+Shift+Arrow)." / "Couldn't move Chrome: ..."
+
+A screen was found, but the window either didn't land on it or the move itself failed. Both are
+warnings, not errors — recording continues on whichever screen the window ends up on; move it
+yourself with **Win + Shift + Right Arrow** if needed.
+
+### "Couldn't fullscreen Chrome: ..."
+
+Putting the window into fullscreen failed. Recording continues in whatever state the window is in.
+
+### "The virtual display didn't show up within 15 s. Continuing anyway."
+
+`manage_virtual_display` turned the display adapter on, but no new screen appeared in time. The batch
+continues, and Chrome placement then falls back to `[display] screen`. If this happens consistently,
+check the adapter in Device Manager.
+
+### "This needs administrator rights once: open a terminal with 'Run as administrator' and run vrec --install-display-helper again."
+
+`vrec --install-display-helper` must be run from an elevated terminal once. After that, no elevation
+is needed again — vrec triggers the scheduled tasks it created without a prompt.
+
+### "The virtual display helper isn't installed (run vrec --install-display-helper as admin), or it couldn't start."
+
+`manage_virtual_display` is on, but `--install-display-helper` was never run (or its scheduled tasks
+were removed, e.g. by `--uninstall-display-helper`). Run it once as administrator, or see
+[virtual-display.md](virtual-display.md).
+
+## Feature toggles
+
+### "Unknown feature in features.toml, ignored: ..." / "Feature '...' in features.toml isn't true/false, ignored: ..."
+
+`data\features.toml` has a name vrec doesn't know, or a value that isn't `true`/`false`. That one line
+is ignored (the feature keeps its default); everything else in the file still applies.
+
+### "Unknown feature: ..." (from `vrec --enable`/`--disable`)
+
+The name passed to `--enable`/`--disable` isn't a real feature name. Run `vrec --features` to see the
+current, valid names.
+
+## Scheduled runs
+
+`vrec --schedule status` prints "No scheduled run." if none is registered, otherwise its next run time
+and the result of its last run (`0` means success). Remember: OBS and the recording Chrome window
+(`launch_chrome.bat`) must already be open, and the PC awake, at the scheduled time — the scheduled
+task runs `vrec --all`, it doesn't open them for you.
 
 ## Output files
 

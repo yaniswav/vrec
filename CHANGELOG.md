@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
+### Added
+
+- Feature toggles (`vrec --features`/`--enable`/`--disable`, menu option 5, `data/features.toml`):
+  turn optional behavior on or off individually. Data-safety mechanisms (history saving, restoring
+  leftover OBS audio settings, the instance lock) are always on and have no toggle.
+- `vrec --doctor`: read-only checks of the playlist, config, feature toggles, the OBS
+  connection/version/output settings, recording folder space, the display capture source, VB-CABLE,
+  video sound routing, Chrome's debug port, and the virtual screen, each with a hint and an exit code.
+- Per-run log files in `data/logs` (feature `run_logs`): a copy of the console output for each
+  recording, `--test`, or `--doctor` run, with the OBS password masked and the last 20 files kept.
+- Non-interactive selection: `vrec --all` (every NEW/FAILED video) and `vrec --only 3,1,5-8`, plus
+  `--test --only N` to test one specific video.
+- Scheduled unattended runs: `vrec --schedule on HH:MM [--days MON,...] | off | status`, backed by
+  Windows Task Scheduler.
+- `audio_sink` feature (on by default): routes only the recorded video's own sound to the configured
+  audio output (`[audio] output`, default "CABLE Input") using a brief, automatically-revoked
+  microphone permission to find the device by name; routing Chrome through the Windows volume mixer
+  becomes a fallback.
+- `auto_place_window` feature (on by default): moves the recording Chrome window to the virtual screen
+  automatically and puts it back afterwards; moving it by hand becomes a fallback.
+- `manage_virtual_display` feature (off by default) with `vrec --install-display-helper [PATTERN]` /
+  `--uninstall-display-helper`: registers elevated on-demand scheduled tasks (administrator rights
+  needed once) so vrec can turn the virtual display on before a batch and off after it, undoing only
+  what it turned on.
+- `[display] screen` and `[audio] output` config keys.
+
+### Fixed
+
+- With a real second monitor connected, `[display] screen = "auto"` could pick it instead of the
+  virtual display while the virtual display was off. vrec now reads the virtual adapter's own state
+  from Windows instead of guessing from the list of screens.
+- A video paused by the page itself right after a playback-progress tick could be replayed one extra
+  time; playback progress is now checked before counting a replay.
+- An image or audio check that was turned off (or otherwise not run) was reported as failed instead of
+  "not checked".
+
 ## [0.1.0] - 2026-09-27
 
 Initial public version.

@@ -17,8 +17,13 @@ Run all of these and fix anything they flag:
 
 ```
 ruff check .
+ruff format --check .
+mypy .
 pytest
 ```
+
+`node .github/scripts/check-js.js` also runs in CI, to catch a syntax error in `src/vrec/js/*.js`
+(each file must be a single JS expression — see the comment at the top of that script).
 
 To check test coverage locally:
 
