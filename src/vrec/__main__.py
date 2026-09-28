@@ -193,7 +193,7 @@ def _run(args: argparse.Namespace, argv: list[str]) -> int:
     config_path = args.config or (data_dir / "config.toml")
 
     from vrec.config import Paths
-    from vrec.console import first_line
+    from vrec.console import first_line, no_quick_edit
     from vrec.errors import VrecError
     from vrec.features import FeatureSet, load_features
     from vrec.logs import capture
@@ -204,7 +204,8 @@ def _run(args: argparse.Namespace, argv: list[str]) -> int:
     except VrecError:
         features = FeatureSet()
 
-    with capture(data_dir, argv, features) as log:
+    guard = no_quick_edit() if features.enabled("protect_console") else contextlib.nullcontext()
+    with capture(data_dir, argv, features) as log, guard:
         try:
             return _dispatch(args, paths, features)
         except VrecError as e:

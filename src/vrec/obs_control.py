@@ -28,8 +28,16 @@ _AUDIO_SOURCE_KIND = "wasapi_input_capture"
 logging.getLogger("obsws_python").setLevel(logging.CRITICAL)
 
 
+UNREACHABLE_MESSAGE = (
+    "Can't reach OBS: open OBS and enable the WebSocket server (Tools > WebSocket Server Settings)."
+)
+
+
 class ObsUnreachable(VrecError):
     """OBS's WebSocket server didn't answer at all (connection refused): OBS may not be open."""
+
+    def __init__(self, message: str = UNREACHABLE_MESSAGE) -> None:
+        super().__init__(message)
 
 
 def get_password(paths: Paths) -> tuple[str, bool]:

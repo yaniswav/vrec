@@ -56,6 +56,8 @@ class _Context:
         if not self._tried:
             self._tried = True
             try:
+                if not launcher.port_listening(self.settings.obs_host, self.settings.obs_port):
+                    raise obs_control.ObsUnreachable()  # fast: no 2 s connection attempt on a closed port
                 self._client, _password = obs_control.connect(self.settings, self.paths)
             except obs_control.ObsUnreachable as e:
                 self._client_error = str(e)
@@ -307,7 +309,9 @@ def check_vb_cable(ctx: _Context) -> Check:
 
 def check_chrome_debug_port(ctx: _Context) -> Check:
     """Chrome debugging port."""
-    url = f"http://localhost:{ctx.settings.chrome_port}/json/version"
+    url = f"http://127.0.0.1:{ctx.settings.chrome_port}/json/version"
+    if not launcher.port_listening("127.0.0.1", ctx.settings.chrome_port):
+        return _chrome_not_open_check(ctx, url)
     try:
         with urllib.request.urlopen(url, timeout=3) as response:  # noqa: S310 - local debug port only
             data = json.loads(response.read().decode("utf-8"))

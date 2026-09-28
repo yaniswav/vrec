@@ -24,6 +24,8 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
         raise urllib.error.URLError("connection refused (test)")
 
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    # Ports count as listening: each test decides through its fake client / fake HTTP answer.
+    monkeypatch.setattr(doctor.launcher, "port_listening", lambda host, port, timeout=0.3: True)
 
 
 class FakeClient:
@@ -670,3 +672,18 @@ def test_scene_capture_feature_off_checks_the_program_scene(
     ctx.features.set("obs_scene", False)
     monkeypatch.setattr(doctor.obs_scene, "scene_names", lambda client: pytest.fail("not needed"))
     assert doctor.check_scene_capture(ctx).status in ("ok", "warn")
+
+
+def test_closed_ports_are_detected_without_connecting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(doctor.launcher, "port_listening", lambda host, port, timeout=0.3: False)
+    monkeypatch.setattr(
+        obs_control, "connect", lambda s, p: pytest.fail("no connection attempt on a closed port")
+    )
+    ctx = doctor._Context(
+        settings=Settings(), paths=_paths(tmp_path), features=FeatureSet({"auto_start_obs": False})
+    )
+    assert ctx.client() is None
+    assert "Can't reach OBS" in (ctx._client_error or "")
+    assert doctor.check_chrome_debug_port(ctx).status in ("fail", "info")

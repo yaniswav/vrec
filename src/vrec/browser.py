@@ -34,7 +34,7 @@ def connect_browser(
     """
     with sync_playwright() as playwright:
         try:
-            browser = playwright.chromium.connect_over_cdp(f"http://localhost:{chrome_port}", timeout=10000)
+            browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{chrome_port}", timeout=10000)
         except Exception as e:
             raise VrecError("Chrome not found: run launch_chrome.bat first.") from e
         context = browser.contexts[0]

@@ -450,3 +450,11 @@ suffix.
 Several `CHECK` reasons can combine on the same result, e.g. `CHECK: black image?, no audio`. `CHECK`
 results are not retried automatically (they need a look first); every `FAILED` result above is retried
 by "Record everything".
+
+## The vrec window seems frozen
+
+A click inside a Windows console window normally starts a text selection ("QuickEdit") and pauses
+the program at its next output, while OBS keeps recording. vrec turns QuickEdit off for its own
+window while it runs (feature `protect_console`, on by default) and restores it when it exits. If
+you turned the feature off and the window's title starts with "Select", press Esc or right-click
+in the window to resume.

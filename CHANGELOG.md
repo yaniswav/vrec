@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `protect_console` feature (on by default): turns off the console's QuickEdit mode while vrec runs, so
+  a stray click in its window can no longer pause it mid-recording.
 - `--launch-chrome` (what `scripts\windows\launch_chrome.bat` now runs, as `vrec --launch-chrome
   --pause-on-exit`): starts the recording Chrome, whatever `auto_start_chrome` says, places it on the
   virtual screen maximized (feature `auto_place_window`), then exits — for logging in to a site before
@@ -38,6 +40,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Much faster start when OBS or Chrome is closed: a quick local port check replaces connection
+  attempts that took about 2 s each on Windows, OBS is polled every 0.5 s while it starts, and
+  `[obs] host` now defaults to `127.0.0.1`. `vrec --doctor` takes about 1 s instead of 5 or more.
 - Chrome is now started and placed on the virtual screen, maximized, before the menu shows up instead
   of after — it's ready and visible while you pick videos, and is fullscreened only right before
   recording starts.

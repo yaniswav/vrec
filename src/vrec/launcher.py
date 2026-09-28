@@ -11,6 +11,7 @@ real program.
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -46,9 +47,23 @@ StartChromeFn = Callable[[Path, int, Path], None]
 _OBS_REGISTRY_KEYS = (r"SOFTWARE\OBS Studio", r"SOFTWARE\WOW6432Node\OBS Studio")
 _CHROME_APP_PATHS_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe"
 
-_START_POLL_S = 2.0
+_START_POLL_S = 0.5
 
 ReadyFn = Callable[[obs.ReqClient, float], None]
+ProbeFn = Callable[[str, int], bool]
+
+
+def port_listening(host: str, port: int, timeout: float = 0.3) -> bool:
+    """Quick local check that something listens on the port.
+
+    On Windows a refused connection takes about 2 s (the connection is retried), while a local
+    listening port answers in well under a millisecond: a short timeout tells them apart at once.
+    """
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
 
 
 def _read_registry_default(key_path: str) -> str | None:
@@ -134,6 +149,7 @@ def ensure_obs(
     sleep: SleepFn = time.sleep,
     clock: ClockFn = time.time,
     ready: ReadyFn = obs_control.wait_until_ready,
+    probe: ProbeFn = port_listening,
 ) -> tuple[obs.ReqClient, str]:
     """Connect to OBS, starting it first if it isn't open (feature `auto_start_obs`).
 
@@ -141,13 +157,17 @@ def ensure_obs(
     open": it propagates immediately, same as without this feature.
     """
     print("Connecting to OBS...")
-    try:
-        client, password = connect(settings, paths)
-        ready(client, settings.obs_start_timeout_s)
-        return client, password
-    except obs_control.ObsUnreachable:
-        if not features.enabled("auto_start_obs"):
-            raise
+    # Probe first: a closed port costs ~2 s per connection attempt on Windows, a probe 0.3 s at most.
+    if probe(settings.obs_host, settings.obs_port):
+        try:
+            client, password = connect(settings, paths)
+            ready(client, settings.obs_start_timeout_s)
+            return client, password
+        except obs_control.ObsUnreachable:
+            if not features.enabled("auto_start_obs"):
+                raise
+    elif not features.enabled("auto_start_obs"):
+        raise obs_control.ObsUnreachable()
 
     if running():
         raise VrecError(
@@ -169,6 +189,8 @@ def ensure_obs(
         sleep(_START_POLL_S)
         line.show(f"Waiting for OBS to start... {clock() - started:.0f} s")
         try:
+            if not probe(settings.obs_host, settings.obs_port):
+                raise obs_control.ObsUnreachable()
             client, password = connect(settings, paths)
         except obs_control.ObsUnreachable:
             if clock() >= deadline:
@@ -232,9 +254,13 @@ def chrome_profile_dir(settings: Settings) -> Path:
     return Path(local_appdata) / "vrec" / "chrome-profile"
 
 
-def chrome_port_open(port: int, urlopen: UrlOpener = urllib.request.urlopen) -> bool:
+def chrome_port_open(
+    port: int, urlopen: UrlOpener = urllib.request.urlopen, probe: Callable[[str, int], bool] = port_listening
+) -> bool:
     """Whether Chrome's DevTools debugging port answers."""
-    url = f"http://localhost:{port}/json/version"
+    if not probe("127.0.0.1", port):
+        return False
+    url = f"http://127.0.0.1:{port}/json/version"
     try:
         with urlopen(url, timeout=2):  # noqa: S310 - local debug port only
             return True

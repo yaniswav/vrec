@@ -197,7 +197,7 @@ is optional; a missing file or key falls back to the default shown below.
 
 | Section | Key | Default | Meaning |
 |---|---|---|---|
-| `[obs]` | `host` | `localhost` | Hostname of the machine running OBS. |
+| `[obs]` | `host` | `127.0.0.1` | Address of the machine running OBS (`127.0.0.1` rather than `localhost`: on Windows it saves a few seconds when OBS is closed). |
 | `[obs]` | `port` | `4455` | obs-websocket server port. |
 | `[obs]` | `audio_source_name` | `Chrome Audio (VB-CABLE)` | Name of the OBS audio input source that carries Chrome's sound; created automatically if missing. |
 | `[obs]` | `path` | (empty) | Path to `obs64.exe`, if vrec can't find it itself (feature `auto_start_obs`). Empty = look in the registry, then the default install location. |
@@ -259,6 +259,7 @@ the single-instance lock (`data\vrec.lock`).
 | `auto_start_chrome` | ON | Start the recording Chrome if it isn't open (it stays open afterwards) |
 | `obs_scene` | ON | Record from vrec's own OBS scene (created if missing), then switch back |
 | `preflight_check` | ON | Before a batch, check screen, window, OBS capture and sound end to end |
+| `protect_console` | ON | Stop a click in the vrec window from pausing it (Windows QuickEdit) |
 
 ## Output files & statuses
 

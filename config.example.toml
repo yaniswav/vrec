@@ -7,7 +7,7 @@
 
 [obs]
 # Hostname of the machine running OBS (with obs-websocket enabled).
-host = "localhost"
+host = "127.0.0.1"
 # obs-websocket server port. See OBS: Tools > WebSocket Server Settings.
 port = 4455
 # Name of the OBS audio input source that should carry Chrome's sound.

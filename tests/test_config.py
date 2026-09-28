@@ -15,7 +15,7 @@ EXAMPLE_CONFIG = REPO_ROOT / "config.example.toml"
 
 def test_defaults() -> None:
     s = Settings()
-    assert s.obs_host == "localhost"
+    assert s.obs_host == "127.0.0.1"
     assert s.obs_port == 4455
     assert s.audio_source_name == "Chrome Audio (VB-CABLE)"
     assert s.chrome_port == 9222

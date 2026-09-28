@@ -167,14 +167,24 @@ class _FakeResponse:
 
 
 def test_chrome_port_open_true_when_urlopen_succeeds() -> None:
-    assert launcher.chrome_port_open(9222, urlopen=lambda url, timeout=2: _FakeResponse()) is True
+    assert (
+        launcher.chrome_port_open(
+            9222, urlopen=lambda url, timeout=2: _FakeResponse(), probe=lambda h, p: True
+        )
+        is True
+    )
+
+
+def test_chrome_port_open_closed_port_skips_the_http_request() -> None:
+    urlopen = lambda url, timeout=2: pytest.fail("no HTTP request on a closed port")  # noqa: E731
+    assert launcher.chrome_port_open(9222, urlopen=urlopen, probe=lambda h, p: False) is False
 
 
 def test_chrome_port_open_false_when_urlopen_fails() -> None:
     def boom(url: str, timeout: float = 2) -> None:
         raise OSError("connection refused")
 
-    assert launcher.chrome_port_open(9222, urlopen=boom) is False
+    assert launcher.chrome_port_open(9222, urlopen=boom, probe=lambda h, p: True) is False
 
 
 # ---------- start_obs / start_chrome ----------
@@ -250,6 +260,7 @@ def test_ensure_obs_returns_immediately_when_already_reachable(tmp_path: Path) -
         running=lambda: pytest.fail("should not check tasklist"),
         start=lambda exe: pytest.fail("should not start obs"),
         ready=lambda c, timeout: readied.append(c),
+        probe=lambda host, port: True,
     )
     assert result == (client, "pw")
     assert readied == [client]  # an OBS opened by hand may still be loading too
@@ -261,9 +272,13 @@ def test_ensure_obs_starts_and_connects_after_retries(tmp_path: Path) -> None:
 
     def connect(settings: Settings, paths: Paths) -> tuple[object, str]:
         attempts["n"] += 1
-        if attempts["n"] <= 3:
-            raise obs_control.ObsUnreachable("nope")
         return client, "pw"
+
+    probes = {"n": 0}
+
+    def probe(host: str, port: int) -> bool:
+        probes["n"] += 1
+        return probes["n"] > 4  # closed at first (no connection attempt wasted), open after 3 polls
 
     started: list[Path] = []
     sleeps: list[float] = []
@@ -287,13 +302,14 @@ def test_ensure_obs_starts_and_connects_after_retries(tmp_path: Path) -> None:
         sleep=sleep,
         clock=lambda: now[0],
         ready=lambda c, timeout: readied.append((c, timeout)),
+        probe=probe,
     )
 
     assert result == (client, "pw")
-    assert readied == [(client, 54.0)]  # waits for OBS to finish loading, within what's left
+    assert readied == [(client, 58.0)]  # waits for OBS to finish loading, within what's left
     assert started == [exe]
-    assert attempts["n"] == 4  # the initial attempt, then 3 retries before success
-    assert sleeps == [2.0, 2.0, 2.0]
+    assert attempts["n"] == 1  # connects only once the port listens
+    assert sleeps == [0.5, 0.5, 0.5, 0.5]
 
 
 def test_ensure_obs_running_but_not_answering_errors_without_starting(tmp_path: Path) -> None:
@@ -309,6 +325,7 @@ def test_ensure_obs_running_but_not_answering_errors_without_starting(tmp_path: 
             running=lambda: True,
             find=lambda s: pytest.fail("should not look for obs"),
             start=lambda e: pytest.fail("should not start obs"),
+            probe=lambda host, port: True,
         )
 
 
@@ -325,6 +342,7 @@ def test_ensure_obs_not_found_errors(tmp_path: Path) -> None:
             running=lambda: False,
             find=lambda s: None,
             start=lambda e: pytest.fail("should not start obs"),
+            probe=lambda host, port: False,
         )
 
 
@@ -348,6 +366,7 @@ def test_ensure_obs_timeout_errors(tmp_path: Path) -> None:
             start=lambda e: None,
             sleep=sleep,
             clock=lambda: now[0],
+            probe=lambda host, port: False,
         )
 
 
@@ -364,6 +383,19 @@ def test_ensure_obs_feature_off_reraises_the_original_error(tmp_path: Path) -> N
             running=lambda: pytest.fail("should not check tasklist"),
             find=lambda s: pytest.fail("should not look for obs"),
             start=lambda e: pytest.fail("should not start obs"),
+            probe=lambda host, port: True,
+        )
+
+
+def test_ensure_obs_closed_port_with_feature_off_fails_fast(tmp_path: Path) -> None:
+    with pytest.raises(obs_control.ObsUnreachable, match="Can't reach OBS"):
+        launcher.ensure_obs(
+            Settings(),
+            _paths(tmp_path),
+            FeatureSet({"auto_start_obs": False}),
+            connect=lambda s, p: pytest.fail("no connection attempt on a closed port"),
+            running=lambda: pytest.fail("should not check tasklist"),
+            probe=lambda host, port: False,
         )
 
 
@@ -380,6 +412,7 @@ def test_ensure_obs_wrong_password_is_not_treated_as_unreachable(tmp_path: Path)
             running=lambda: pytest.fail("should not check tasklist"),
             find=lambda s: pytest.fail("should not look for obs"),
             start=lambda e: pytest.fail("should not start obs"),
+            probe=lambda host, port: True,
         )
 
 
@@ -419,7 +452,7 @@ def test_ensure_chrome_starts_and_waits_for_the_port(tmp_path: Path) -> None:
     )
 
     assert started == [(exe, 9222, launcher.chrome_profile_dir(Settings()))]
-    assert sleeps == [2.0, 2.0]
+    assert sleeps == [0.5, 0.5]
 
 
 def test_ensure_chrome_not_found_errors() -> None:

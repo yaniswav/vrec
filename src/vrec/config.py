@@ -14,7 +14,7 @@ from vrec.errors import VrecError
 class Settings:
     """Tunable knobs, all with the values the original script used."""
 
-    obs_host: str = "localhost"
+    obs_host: str = "127.0.0.1"
     obs_port: int = 4455
     audio_source_name: str = "Chrome Audio (VB-CABLE)"
     obs_path: str = ""

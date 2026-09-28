@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import math
 import re
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 
 def human_duration(seconds: float | None) -> str:
@@ -43,3 +46,41 @@ class ProgressLine:
         if self._width:
             print()
             self._width = 0
+
+
+# ---------- Windows console: a click must not freeze vrec ----------
+
+_ENABLE_QUICK_EDIT_MODE = 0x0040
+_ENABLE_EXTENDED_FLAGS = 0x0080
+_STD_INPUT_HANDLE = -10
+
+
+@contextmanager
+def no_quick_edit() -> Iterator[bool]:
+    """Turn off the console's QuickEdit mode for the duration of the block (Windows only).
+
+    With QuickEdit on, a single click in the console window selects text and suspends the program
+    at its next output, while OBS keeps recording. Yields whether the mode was changed; the original
+    mode is always restored.
+    """
+    if sys.platform != "win32":
+        yield False
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.GetStdHandle(_STD_INPUT_HANDLE)
+    mode = wintypes.DWORD()
+    if not handle or not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+        yield False  # not a console (redirected input, IDE, tests)
+        return
+    original = mode.value
+    changed = bool(
+        kernel32.SetConsoleMode(handle, (original & ~_ENABLE_QUICK_EDIT_MODE) | _ENABLE_EXTENDED_FLAGS)
+    )
+    try:
+        yield changed
+    finally:
+        if changed:
+            kernel32.SetConsoleMode(handle, original)
