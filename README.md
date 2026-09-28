@@ -213,6 +213,7 @@ is optional; a missing file or key falls back to the default shown below.
 | `[recording]` | `test_duration` | `30` | Duration recorded in `--test` mode, in seconds. |
 | `[recording]` | `max_wall_factor` | `3` | Wall-clock safety cap: give up on a video after roughly (duration x this factor) seconds. |
 | `[recording]` | `max_wall_extra` | `600` | Extra seconds added on top of that cap (also used when the duration is unknown). |
+| `[recording]` | `min_free_gb` | `5` | Free space (GB) the OBS recording folder must have before each video (feature `disk_space_guard`). |
 | `[checks]` | `black_level` | `20` | Maximum average brightness (0-255) below which a frame is considered black. |
 | `[checks]` | `abort_if_black_after` | `60` | Give up on a video that stays black for this many seconds. |
 | `[checks]` | `audio_level` | `0.003` | Minimum audio level to consider that there is sound (roughly -50 dB). |
@@ -261,6 +262,7 @@ the single-instance lock (`data\vrec.lock`).
 | `preflight_check` | ON | Before a batch, check screen, window, OBS capture and sound end to end |
 | `protect_console` | ON | Stop a click in the vrec window from pausing it (Windows QuickEdit) |
 | `keep_awake` | ON | Keep Windows from sleeping or turning the screens off while recording |
+| `disk_space_guard` | ON | Stop the batch before a video when the recording disk is almost full |
 
 ## Output files & statuses
 

@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `disk_space_guard` feature (on by default, `[recording] min_free_gb`, 5 GB): the batch stops before
+  a video when the OBS recording folder is almost full, instead of OBS failing mid-recording.
 - `keep_awake` feature (on by default): while a batch records, Windows is asked not to sleep or turn
   the screens off (nothing is changed in the power settings; back to normal when vrec stops).
 - `protect_console` feature (on by default): turns off the console's QuickEdit mode while vrec runs, so

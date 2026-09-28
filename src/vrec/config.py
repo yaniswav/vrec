@@ -39,6 +39,7 @@ class Settings:
     audio_output: str = "CABLE Input"
     max_wall_factor: float = 3
     max_wall_extra_s: float = 600
+    min_free_gb: float = 5
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,7 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
         "test_duration": ("test_duration_s", float),
         "max_wall_factor": ("max_wall_factor", float),
         "max_wall_extra": ("max_wall_extra_s", float),
+        "min_free_gb": ("min_free_gb", float),
     },
     "checks": {
         "black_level": ("black_level", int),

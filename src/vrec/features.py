@@ -44,6 +44,7 @@ REGISTRY: tuple[Feature, ...] = (
     Feature("obs_scene", "Record from vrec's own OBS scene (created if missing), then switch back"),
     Feature("preflight_check", "Before a batch, check screen, window, OBS capture and sound end to end"),
     Feature("protect_console", "Stop a click in the vrec window from pausing it (Windows QuickEdit)"),
+    Feature("disk_space_guard", "Stop the batch before a video when the recording disk is almost full"),
     Feature("keep_awake", "Keep Windows from sleeping or turning the screens off while recording"),
 )
 

@@ -364,3 +364,44 @@ def test_choose_selection_test_and_only_skips_menu(
 def test_run_rejects_test_combined_with_all(tmp_path: Path) -> None:
     with pytest.raises(VrecError, match="--test"):
         app.run(tmp_path, tmp_path / "config.toml", test_mode=True, all_videos=True)
+
+
+# ---------- disk_space_guard ----------
+
+
+class _ClientWithFolder(FakeClient):
+    def get_record_directory(self) -> SimpleNamespace:
+        return SimpleNamespace(record_directory="D:/Videos")
+
+
+def test_batch_stops_before_a_video_when_the_disk_is_almost_full(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    batch = make_batch(tmp_path, client=_ClientWithFolder())
+    record = make_record([make_result(title="Video 1"), make_result(title="Video 2")])
+    free = iter([50e9, 3e9])  # enough for the first video, not for the second
+    selection = [("https://x/1", "Video 1"), ("https://x/2", "Video 2")]
+
+    app._record_batch(batch, selection, record=record, free_bytes=lambda folder: int(next(free)))
+
+    assert len(record.calls) == 1  # type: ignore[attr-defined]
+    assert url_key("https://x/2") not in batch.videos_history  # left untouched for next time
+    assert "Only 3.0 GB free in D:/Videos: batch stopped before 'Video 2'" in capsys.readouterr().out
+
+
+def test_disk_space_guard_off(tmp_path: Path) -> None:
+    batch = make_batch(tmp_path, client=_ClientWithFolder(), features=FeatureSet({"disk_space_guard": False}))
+    record = make_record([make_result(title="Video 1")])
+    app._record_batch(batch, [("https://x/1", "Video 1")], record=record, free_bytes=lambda folder: 0)
+    assert len(record.calls) == 1  # type: ignore[attr-defined]
+
+
+def test_disk_space_unknown_never_blocks(tmp_path: Path) -> None:
+    batch = make_batch(tmp_path, client=_ClientWithFolder())
+    record = make_record([make_result(title="Video 1")])
+
+    def broken(folder: str) -> int:
+        raise OSError("drive gone")
+
+    app._record_batch(batch, [("https://x/1", "Video 1")], record=record, free_bytes=broken)
+    assert len(record.calls) == 1  # type: ignore[attr-defined]

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -496,6 +497,7 @@ def _record_batch(
     record: RecordFn = record_one,
     chrome_alive: Callable[[Batch], bool] = _chrome_alive,
     obs_alive: Callable[[obs.ReqClient], bool] = _obs_alive,
+    free_bytes: Callable[[str], int] = lambda folder: shutil.disk_usage(folder).free,
 ) -> None:
     """Record every video in `selection`, in order, stopping early on a circuit-breaker trip."""
     # Set by `run()` before the batch loop starts.
@@ -503,6 +505,8 @@ def _record_batch(
     error_streak = 0
     for i, (url, title) in enumerate(selection, 1):
         batch.current_title = history.display_title(batch.videos_history, url, title)
+        if not _enough_disk_space(batch, free_bytes):
+            break
         result, had_error = _record_one_with_retry(batch, i, len(selection), url, title, record)
         batch.results.append(result)
         if not batch.test_mode:
@@ -521,6 +525,29 @@ def _record_batch(
             error_streak = 0
 
         batch.page.wait_for_timeout(3000)
+
+
+def _enough_disk_space(batch: Batch, free_bytes: Callable[[str], int]) -> bool:
+    """Whether the OBS recording folder still has room for a video (feature disk_space_guard).
+
+    Anything unexpected (folder unknown, OBS busy) lets the video go ahead: the guard must never be
+    the reason a batch doesn't record.
+    """
+    if not batch.features.enabled("disk_space_guard") or batch.client is None:
+        return True
+    try:
+        folder = batch.client.get_record_directory().record_directory
+        free = free_bytes(folder)
+    except Exception:
+        return True
+    minimum = batch.settings.min_free_gb * 1e9
+    if free >= minimum:
+        return True
+    print(
+        f"Only {free / 1e9:.1f} GB free in {folder}: batch stopped before '{batch.current_title}'. "
+        "Free some space, or lower [recording] min_free_gb in config.toml."
+    )
+    return False
 
 
 def _record_one_with_retry(

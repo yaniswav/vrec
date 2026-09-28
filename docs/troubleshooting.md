@@ -458,3 +458,11 @@ the program at its next output, while OBS keeps recording. vrec turns QuickEdit 
 window while it runs (feature `protect_console`, on by default) and restores it when it exits. If
 you turned the feature off and the window's title starts with "Select", press Esc or right-click
 in the window to resume.
+
+## "Only N GB free in ...: batch stopped before '...'"
+
+The OBS recording folder has less free space than `[recording] min_free_gb` (5 GB by default), so
+vrec stopped before starting the next video rather than letting OBS fail halfway through it. The
+remaining videos are untouched: free some space (or move the recordings elsewhere) and run again.
+Lower `min_free_gb` in `config.toml`, or turn the check off with `vrec --disable disk_space_guard`,
+if you know what you are doing.

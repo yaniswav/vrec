@@ -53,6 +53,9 @@ max_wall_factor = 3
 # Extra seconds added on top of that cap (also used when the duration, or the
 # test duration, is unknown).
 max_wall_extra = 600
+# Stop the batch before a video when the OBS recording folder has less free space than this
+# (in GB; feature disk_space_guard).
+min_free_gb = 5
 
 [checks]
 # Maximum average brightness (0-255) below which a frame is considered "black".
