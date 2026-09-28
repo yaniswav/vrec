@@ -466,3 +466,11 @@ vrec stopped before starting the next video rather than letting OBS fail halfway
 remaining videos are untouched: free some space (or move the recordings elsewhere) and run again.
 Lower `min_free_gb` in `config.toml`, or turn the check off with `vrec --disable disk_space_guard`,
 if you know what you are doing.
+
+## "... OBS records 3840x2160: the image will be upscaled (blurry)."
+
+Shown by `vrec --doctor` (and noted in the pre-flight "Virtual screen" line) when the screen Chrome
+records on has fewer pixels than OBS's base (canvas) resolution. OBS then enlarges a smaller image
+and the recording looks soft. Set the virtual display's resolution to at least OBS's base resolution
+in Windows display settings (or lower OBS's). vrec compares real pixels: a 3840x2160 virtual display
+scaled to 200% in Windows (which the desktop shows as 1920x1080) is fine.

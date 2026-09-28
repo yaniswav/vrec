@@ -365,9 +365,17 @@ def check_virtual_screen(ctx: _Context) -> Check:
             detail += " auto_place_window is off: move Chrome there by hand."
         others = [s for s in screens if not s.primary]
         hint = ""
-        if wanted.strip().lower() in ("", "auto") and (len(others) > 1 or screen.width < 2560):
+        if wanted.strip().lower() in ("", "auto") and (len(others) > 1 or screen.pixels[0] < 2560):
             hint = (
                 'If this isn\'t your virtual display, set [display] screen in config.toml (e.g. "DISPLAY3").'
+            )
+        canvas = _obs_canvas(ctx)
+        if canvas and display.smaller_than(screen, canvas):
+            return Check(
+                "warn",
+                title,
+                detail=f"{detail} OBS records {canvas[0]}x{canvas[1]}: the image will be upscaled (blurry).",
+                hint="Set the virtual display's resolution to at least OBS's (Windows display settings).",
             )
         return Check("ok", title, detail=detail, hint=hint)
     return Check(
@@ -376,6 +384,18 @@ def check_virtual_screen(ctx: _Context) -> Check:
         detail=f'No screen matches [display] screen = "{wanted}" ({len(screens)} screen(s) found).',
         hint="Turn the virtual display on, or see docs/virtual-display.md.",
     )
+
+
+def _obs_canvas(ctx: _Context) -> tuple[int, int] | None:
+    """OBS's base (canvas) resolution, when OBS is reachable."""
+    client = ctx.client()
+    if client is None:
+        return None
+    try:
+        video = client.get_video_settings()
+        return int(video.base_width), int(video.base_height)
+    except Exception:
+        return None
 
 
 def check_audio_routing(ctx: _Context) -> Check:

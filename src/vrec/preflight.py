@@ -24,7 +24,7 @@ from playwright.sync_api import Browser, Page
 
 from vrec import obs_scene
 from vrec.browser import get_window_bounds, load_js, microphone_permission, origin_of
-from vrec.display import Screen
+from vrec.display import Screen, smaller_than
 from vrec.obs_control import AudioMeter
 
 # Two unusual colors: a match on both can't be a coincidence (desktop, player, black screen...).
@@ -148,7 +148,15 @@ def check_screen(ctx: Context) -> CheckResult:
             "not found",
             hint="Turn the virtual display on, or set [display] screen in config.toml.",
         )
-    return CheckResult(True, "Virtual screen", ctx.screen.describe())
+    detail = ctx.screen.describe()
+    try:
+        video = ctx.client.get_video_settings()
+        canvas = (int(video.base_width), int(video.base_height))
+    except Exception:
+        canvas = None
+    if canvas and smaller_than(ctx.screen, canvas):
+        detail += f" - smaller than OBS's {canvas[0]}x{canvas[1]} canvas, the video will be upscaled"
+    return CheckResult(True, "Virtual screen", detail)
 
 
 def check_window(ctx: Context) -> CheckResult:

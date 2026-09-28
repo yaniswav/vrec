@@ -181,3 +181,26 @@ def test_install_writes_and_uninstall_removes_the_pattern(monkeypatch, tmp_path)
     assert display.helper_pattern_path().read_text(encoding="utf-8") == "*Virtual Display*"
     display.uninstall_helper(run=FakeRunner())
     assert not display.helper_pattern_path().exists()
+
+
+# ---------- real pixels vs desktop coordinates (DPI scaling) ----------
+
+SCALED_4K = Screen("DISPLAY12", 1920, 0, 1920, 1080, primary=False, pixel_width=3840, pixel_height=2160)
+REAL_1440 = Screen("DISPLAY2", -2560, 0, 2560, 1440, primary=False, pixel_width=2560, pixel_height=1440)
+
+
+def test_pixels_fall_back_to_desktop_size():
+    assert SCALED_4K.pixels == (3840, 2160)
+    assert MAIN.pixels == (MAIN.width, MAIN.height)
+    assert "3840x2160" in SCALED_4K.describe()
+
+
+def test_auto_picks_the_largest_screen_in_real_pixels():
+    # The 4K screen at 200% looks smaller on the desktop than the 1440p one, but has more pixels.
+    assert pick_screen([MAIN, REAL_1440, SCALED_4K], "auto") == SCALED_4K
+
+
+def test_smaller_than_the_obs_canvas():
+    assert not display.smaller_than(SCALED_4K, (3840, 2160))
+    assert display.smaller_than(REAL_1440, (3840, 2160))
+    assert display.smaller_than(REAL_1440, (2560, 1600))

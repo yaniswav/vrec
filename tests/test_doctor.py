@@ -687,3 +687,31 @@ def test_closed_ports_are_detected_without_connecting(
     assert ctx.client() is None
     assert "Can't reach OBS" in (ctx._client_error or "")
     assert doctor.check_chrome_debug_port(ctx).status in ("fail", "info")
+
+
+def test_virtual_screen_scaled_4k_is_not_flagged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    scaled = doctor.display.Screen(
+        "DISPLAY12", 1920, 0, 1920, 1080, False, pixel_width=3840, pixel_height=2160
+    )
+    monkeypatch.setattr(doctor.display, "list_screens", lambda: [_MAIN, scaled])
+    check = doctor.check_virtual_screen(_ctx(tmp_path, None, monkeypatch))
+    assert check.status == "ok" and "3840x2160" in check.detail and check.hint == ""
+
+
+def test_virtual_screen_smaller_than_the_obs_canvas_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    small = doctor.display.Screen(
+        "DISPLAY12", 1920, 0, 1920, 1080, False, pixel_width=1920, pixel_height=1080
+    )
+    monkeypatch.setattr(doctor.display, "list_screens", lambda: [_MAIN, small])
+    ctx = _ctx(tmp_path, _passing_client(tmp_path), monkeypatch)
+    monkeypatch.setattr(
+        ctx,
+        "client",
+        lambda: SimpleNamespace(
+            get_video_settings=lambda: SimpleNamespace(base_width=3840, base_height=2160)
+        ),
+    )
+    check = doctor.check_virtual_screen(ctx)
+    assert check.status == "warn" and "upscaled" in check.detail

@@ -265,3 +265,12 @@ def test_a_crashing_check_fails_instead_of_breaking(chain):
 
     results = preflight.run_checks(make_ctx(chain), checks=[boom])
     assert results == [preflight.CheckResult(False, "Boom", "page crashed")]
+
+
+def test_screen_smaller_than_the_canvas_is_mentioned(chain):
+    from types import SimpleNamespace
+
+    small = Screen("DISPLAY3", 2560, 0, 1920, 1080, primary=False)
+    client = SimpleNamespace(get_video_settings=lambda: SimpleNamespace(base_width=3840, base_height=2160))
+    result = preflight.check_screen(make_ctx(chain, screen=small, client=client))
+    assert result.ok is True and "upscaled" in result.detail

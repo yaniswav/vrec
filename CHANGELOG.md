@@ -61,6 +61,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Screens are compared in real pixels: a 4K virtual display scaled to 200% in Windows was seen as
+  1920x1080, which could make "auto" pick a real 1440p monitor instead and made `vrec --doctor`
+  suggest it wasn't the virtual display. `vrec --doctor` now warns when the recording screen is
+  smaller than OBS's canvas (the video would be upscaled).
 - Wait for OBS to finish loading instead of failing with "OBS is not ready to perform the request" (code 207) right after it starts.
 
 ## [0.2.0] - 2026-09-27

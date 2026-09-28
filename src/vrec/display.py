@@ -37,6 +37,14 @@ class Screen:
     width: int
     height: int
     primary: bool
+    # The screen's real resolution in pixels (0 = unknown). `width`/`height` are desktop
+    # coordinates, which Windows may scale for DPI.
+    pixel_width: int = 0
+    pixel_height: int = 0
+
+    @property
+    def pixels(self) -> tuple[int, int]:
+        return (self.pixel_width, self.pixel_height) if self.pixel_width else (self.width, self.height)
 
     @property
     def center(self) -> tuple[int, int]:
@@ -47,7 +55,8 @@ class Screen:
 
     def describe(self) -> str:
         kind = "main screen" if self.primary else "screen"
-        return f"{self.name} ({self.width}x{self.height}, {kind})"
+        w, h = self.pixels
+        return f"{self.name} ({w}x{h}, {kind})"
 
 
 def list_screens() -> list[Screen]:
@@ -71,8 +80,49 @@ def list_screens() -> list[Screen]:
                 ("szDevice", wintypes.WCHAR * 32),
             ]
 
+        class DEVMODEW(ctypes.Structure):
+            _fields_ = [
+                ("dmDeviceName", wintypes.WCHAR * 32),
+                ("dmSpecVersion", wintypes.WORD),
+                ("dmDriverVersion", wintypes.WORD),
+                ("dmSize", wintypes.WORD),
+                ("dmDriverExtra", wintypes.WORD),
+                ("dmFields", wintypes.DWORD),
+                ("dmPositionX", wintypes.LONG),
+                ("dmPositionY", wintypes.LONG),
+                ("dmDisplayOrientation", wintypes.DWORD),
+                ("dmDisplayFixedOutput", wintypes.DWORD),
+                ("dmColor", wintypes.SHORT),
+                ("dmDuplex", wintypes.SHORT),
+                ("dmYResolution", wintypes.SHORT),
+                ("dmTTOption", wintypes.SHORT),
+                ("dmCollate", wintypes.SHORT),
+                ("dmFormName", wintypes.WCHAR * 32),
+                ("dmLogPixels", wintypes.WORD),
+                ("dmBitsPerPel", wintypes.DWORD),
+                ("dmPelsWidth", wintypes.DWORD),
+                ("dmPelsHeight", wintypes.DWORD),
+                ("dmDisplayFlags", wintypes.DWORD),
+                ("dmDisplayFrequency", wintypes.DWORD),
+                ("dmICMMethod", wintypes.DWORD),
+                ("dmICMIntent", wintypes.DWORD),
+                ("dmMediaType", wintypes.DWORD),
+                ("dmDitherType", wintypes.DWORD),
+                ("dmReserved1", wintypes.DWORD),
+                ("dmReserved2", wintypes.DWORD),
+                ("dmPanningWidth", wintypes.DWORD),
+                ("dmPanningHeight", wintypes.DWORD),
+            ]
+
         user32 = ctypes.windll.user32
         screens: list[Screen] = []
+
+        def pixel_size(device: str) -> tuple[int, int]:
+            mode = DEVMODEW()
+            mode.dmSize = ctypes.sizeof(mode)
+            if user32.EnumDisplaySettingsW(device, -1, ctypes.byref(mode)):  # -1: current settings
+                return int(mode.dmPelsWidth), int(mode.dmPelsHeight)
+            return 0, 0
 
         def on_monitor(
             handle: wintypes.HMONITOR,
@@ -84,6 +134,7 @@ def list_screens() -> list[Screen]:
             info.cbSize = ctypes.sizeof(info)
             if user32.GetMonitorInfoW(handle, ctypes.byref(info)):
                 r = info.rcMonitor
+                pixel_width, pixel_height = pixel_size(info.szDevice)
                 screens.append(
                     Screen(
                         name=info.szDevice.removeprefix("\\\\.\\"),
@@ -92,6 +143,8 @@ def list_screens() -> list[Screen]:
                         width=r.right - r.left,
                         height=r.bottom - r.top,
                         primary=bool(info.dwFlags & 1),
+                        pixel_width=pixel_width,
+                        pixel_height=pixel_height,
                     )
                 )
             return 1
@@ -105,6 +158,18 @@ def list_screens() -> list[Screen]:
         return []
 
 
+def _area(screen: Screen) -> int:
+    """Real pixel count: desktop sizes are scaled differently per screen with DPI settings."""
+    w, h = screen.pixels
+    return w * h
+
+
+def smaller_than(screen: Screen, canvas: tuple[int, int]) -> bool:
+    """Whether the screen has fewer pixels than OBS's canvas in either direction (upscaled video)."""
+    w, h = screen.pixels
+    return w < canvas[0] or h < canvas[1]
+
+
 def pick_screen(screens: Sequence[Screen], wanted: str = "auto") -> Screen | None:
     """The screen to record on.
 
@@ -116,7 +181,7 @@ def pick_screen(screens: Sequence[Screen], wanted: str = "auto") -> Screen | Non
         return None
     if wanted.lower() in ("", "auto"):
         others = [s for s in screens if not s.primary]
-        return max(others, key=lambda s: s.width * s.height) if others else None
+        return max(others, key=_area) if others else None
     if wanted.isdigit():
         index = int(wanted) - 1
         return screens[index] if 0 <= index < len(screens) else None
@@ -135,7 +200,7 @@ def wait_for_new_screen(
     while True:
         new = [s for s in lister() if s not in known]
         if new or waited >= timeout_s:
-            return max(new, key=lambda s: s.width * s.height) if new else None
+            return max(new, key=_area) if new else None
         sleep(0.5)
         waited += 0.5
 
