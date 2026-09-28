@@ -47,6 +47,7 @@ def _batch(tmp_path: Path, test_mode: bool, **features: bool) -> app.Batch:
         test_mode=test_mode,
     )
     batch.results.append(RecordingResult(number=1, title="A", reason="ended", image_ok=True, duration_s=60))
+    batch.started_at -= 125  # a deterministic elapsed time (Windows' clock ticks every ~15 ms)
     return batch
 
 
@@ -55,7 +56,7 @@ def test_batch_end_sends_the_totals(tmp_path):
     app._final_report(_batch(tmp_path, False), send=lambda t, x: sent.append((t, x)) or True)
     [(title, text)] = sent
     assert title == "vrec: batch finished"
-    assert text.startswith("1/1 OK - 1:00 of video - done in ")
+    assert text == "1/1 OK - 1:00 of video - done in 2:05"
 
 
 def test_test_end_sends_the_status(tmp_path):
