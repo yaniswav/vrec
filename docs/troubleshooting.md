@@ -131,6 +131,12 @@ whole file) to a bug report.
 Chrome must be opened with `scripts\windows\launch_chrome.bat`, not with its normal desktop icon or
 taskbar shortcut. That script opens Chrome with the DevTools port vrec needs to control it.
 
+### "Chrome is ready. Log in to the site in that window if needed, then run start.bat or test.bat."
+
+Printed by `scripts\windows\launch_chrome.bat` (`vrec --launch-chrome`) once the recording Chrome is
+open and, if `auto_place_window` is on, placed and maximized on the virtual display. Not an error — log
+in to any site you need to in that window, then run `start.bat`/`test.bat` as usual.
+
 ### "Can't reach OBS: open OBS and enable the WebSocket server (Tools > WebSocket Server Settings)."
 
 With the `auto_start_obs` feature off, this is the only message you'll see when OBS isn't reachable:
@@ -145,10 +151,13 @@ them open afterwards. `vrec --doctor` never starts anything itself; instead, whe
 reachable and its feature is on, it reports `[INFO] ... Not open: vrec will start it (...)` so you can
 see in advance what will happen.
 
-### "Starting OBS..." / "OBS started."
+### "Connecting to OBS..." / "Starting OBS..." / "Waiting for OBS to start... N s" / "OBS started."
 
-Printed while vrec starts OBS itself (feature `auto_start_obs`) and once its WebSocket server answers.
-Not an error — informational only.
+"Connecting to OBS..." is the first thing vrec prints whenever it needs an OBS connection, whether OBS
+turns out to already be open or not. If it isn't reachable and `auto_start_obs` is on, vrec then prints
+"Starting OBS...", starts it, and shows a live "Waiting for OBS to start... N s" line (rewritten in
+place as the seconds tick up) until its WebSocket server answers, then prints "OBS started.". None of
+this is an error — informational only.
 
 ### "Waiting for OBS to finish loading..." / "OBS is still loading after 60 s. Try again once it is fully open."
 

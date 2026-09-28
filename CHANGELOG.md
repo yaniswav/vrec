@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `--launch-chrome` (what `scripts\windows\launch_chrome.bat` now runs, as `vrec --launch-chrome
+  --pause-on-exit`): starts the recording Chrome, whatever `auto_start_chrome` says, places it on the
+  virtual screen maximized (feature `auto_place_window`), then exits — for logging in to a site before
+  `start.bat`/`test.bat`.
 - `auto_start_obs` feature (on by default): starts OBS itself if it isn't already open when a
   recording, `--test`, or scheduled run begins, using `[obs] path` if set, else the registry, else the
   default install location, and leaves it open afterwards. Never starts a second copy: if OBS is
@@ -31,6 +35,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   placement and fullscreen, OBS actually seeing Chrome (retargeting vrec's own display capture if
   needed), and sound reaching OBS — then either offers to record anyway (menu) or stops the batch
   before recording anything (`--all`/`--only`) if something's wrong.
+
+### Changed
+
+- Chrome is now started and placed on the virtual screen, maximized, before the menu shows up instead
+  of after — it's ready and visible while you pick videos, and is fullscreened only right before
+  recording starts.
+- The recording Chrome now starts with `--no-first-run --no-default-browser-check
+  --disable-search-engine-choice-screen`, so a fresh profile no longer shows welcome, default-browser,
+  or search-engine-choice screens on top.
+- Starting OBS is now visible: "Connecting to OBS..." is printed first, and, when vrec has to start OBS
+  itself, a live "Waiting for OBS to start... N s" line is shown until it answers.
 
 ### Fixed
 

@@ -108,12 +108,6 @@ def _run_locked(
     videos, videos_history = _load_inputs(paths)
     client, password = _connect_obs(paths, settings, features, videos, videos_history)
 
-    selection, interactive = _choose_selection(
-        videos, videos_history, paths, settings, features, test_mode, all_videos, only
-    )
-    if not selection:
-        return 0
-
     batch = Batch(
         paths=paths,
         settings=settings,
@@ -123,14 +117,22 @@ def _run_locked(
         client=client,
         password=password,
         scene=obs_control.current_scene(client),
-        interactive=interactive,
     )
 
     try:
-        _prepare_scene(batch)
-        _prepare_audio(batch)
+        # Screen and Chrome first: they are ready (and visible) by the time the menu shows up.
         _virtual_display_on(batch)
         _start_chrome_if_needed(batch)
+        _place_chrome_early(batch)
+
+        selection, batch.interactive = _choose_selection(
+            videos, videos_history, paths, settings, features, test_mode, all_videos, only
+        )
+        if not selection:
+            return 0
+
+        _prepare_scene(batch)
+        _prepare_audio(batch)
         with connect_browser(
             settings.chrome_port,
             quality_filter=features.enabled("quality_filter"),
@@ -138,13 +140,13 @@ def _run_locked(
         ) as (browser, page):
             batch.browser = browser
             batch.page = page
-            if interactive:
+            if batch.interactive:
                 where = (
-                    "Chrome will be moved to the virtual screen automatically"
+                    "Log in to the site in the Chrome window if needed"
                     if features.enabled("auto_place_window")
                     else "Check that the Chrome window is on the virtual screen"
                 )
-                menu.ask(f"\n{len(selection)} video(s) to record. {where}. Press Enter to start...")
+                menu.ask(f"\n{len(selection)} video(s) to record. {where}, then press Enter to start...")
                 print()
 
             if client.get_record_status().output_active:
@@ -385,13 +387,49 @@ def _place_window(batch: Batch) -> None:
     # Set by `run()` before any step that touches the window is called.
     assert batch.browser is not None and batch.page is not None
     try:
-        batch.initial_bounds = get_window_bounds(batch.browser, batch.page)
+        batch.initial_bounds = bounds = get_window_bounds(batch.browser, batch.page)
+        if screen.contains(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2):
+            return  # already there (placed before the menu, or by hand)
         if move_window_to(batch.browser, batch.page, screen):
             print(f"Chrome moved to {screen.describe()}.")
         else:
             warn(f"Couldn't move Chrome to {screen.describe()}. Move it by hand (Win+Shift+Arrow).")
     except Exception as e:
         warn(f"Couldn't move Chrome: {first_line(e)}")
+
+
+def _place_chrome_early(batch: Batch) -> None:
+    """Put Chrome on the virtual screen right away (maximized), before the menu.
+
+    A short connection of its own: the recording connection (with its page scripts) comes later.
+    """
+    if not batch.features.enabled("auto_place_window"):
+        return
+    try:
+        with connect_browser(batch.settings.chrome_port, quality_filter=False, audio_sink=False) as (
+            browser,
+            page,
+        ):
+            batch.browser, batch.page = browser, page
+            _place_window(batch)
+    except VrecError:
+        pass  # Chrome isn't reachable: the recording step reports it with the right advice
+    finally:
+        batch.browser = batch.page = None
+        batch.initial_bounds = None
+
+
+def launch_chrome(data_dir: Path, config_path: Path) -> int:
+    """`vrec --launch-chrome`: start the recording Chrome and put it on the virtual screen, maximized."""
+    paths = Paths(data_dir=data_dir, config=config_path)
+    settings = load_settings(config_path)
+    features, _warnings = load_features(paths.features)
+    forced = FeatureSet({**features.overrides(), "auto_start_chrome": True})
+    launcher.ensure_chrome(settings, forced)
+    batch = Batch(paths=paths, settings=settings, features=forced, test_mode=False)
+    _place_chrome_early(batch)
+    print("Chrome is ready. Log in to the site in that window if needed, then run start.bat or test.bat.")
+    return 0
 
 
 def _prepare_window(batch: Batch) -> None:

@@ -23,6 +23,7 @@ import obsws_python as obs
 
 from vrec import obs_control
 from vrec.config import Paths, Settings
+from vrec.console import ProgressLine
 from vrec.display import Runner
 from vrec.errors import VrecError
 from vrec.features import FeatureSet
@@ -139,6 +140,7 @@ def ensure_obs(
     A wrong-password error (a plain VrecError, not ObsUnreachable) is never treated as "OBS isn't
     open": it propagates immediately, same as without this feature.
     """
+    print("Connecting to OBS...")
     try:
         client, password = connect(settings, paths)
         ready(client, settings.obs_start_timeout_s)
@@ -160,18 +162,23 @@ def ensure_obs(
 
     print("Starting OBS...")
     start(exe)
-    deadline = clock() + settings.obs_start_timeout_s
+    started = clock()
+    deadline = started + settings.obs_start_timeout_s
+    line = ProgressLine()
     while True:
         sleep(_START_POLL_S)
+        line.show(f"Waiting for OBS to start... {clock() - started:.0f} s")
         try:
             client, password = connect(settings, paths)
         except obs_control.ObsUnreachable:
             if clock() >= deadline:
+                line.end()
                 raise VrecError(
                     "OBS started, but its WebSocket server doesn't answer. In OBS: Tools > WebSocket "
                     "Server Settings > Enable WebSocket server."
                 ) from None
             continue
+        line.end()
         ready(client, max(deadline - clock(), 5.0))
         print("OBS started.")
         return client, password
@@ -235,6 +242,10 @@ def chrome_port_open(port: int, urlopen: UrlOpener = urllib.request.urlopen) -> 
         return False
 
 
+# A fresh profile would otherwise open welcome / default-browser / search-engine screens on top.
+CHROME_QUIET_FLAGS = ("--no-first-run", "--no-default-browser-check", "--disable-search-engine-choice-screen")
+
+
 def start_chrome(exe: Path, port: int, profile: Path, popen: PopenFn = subprocess.Popen) -> None:
     """Start the recording Chrome, detached, with the same flags as launch_chrome.bat."""
     popen(
@@ -245,6 +256,7 @@ def start_chrome(exe: Path, port: int, profile: Path, popen: PopenFn = subproces
             "--autoplay-policy=no-user-gesture-required",
             "--disable-features=CalculateNativeWinOcclusion",
             "--disable-backgrounding-occluded-windows",
+            *CHROME_QUIET_FLAGS,
         ],
         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         stdin=subprocess.DEVNULL,

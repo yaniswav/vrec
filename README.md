@@ -24,10 +24,13 @@ Unattended OBS recording of web videos, one after another.
 
 - **Chrome** is driven over the DevTools protocol (CDP) on a dedicated profile. By default vrec starts
   the recording Chrome itself if its debug port doesn't answer (feature `auto_start_chrome`, using
-  `[chrome] path`/`profile` if you set them, or the standard install location and profile otherwise)
-  and moves its window onto the virtual display before each batch, then puts it back afterwards
-  (feature `auto_place_window`); starting it yourself with `launch_chrome.bat`, or moving it by hand
-  (**Win + Shift + Right Arrow**), are fallbacks for when those features are off or don't work for you.
+  `[chrome] path`/`profile` if you set them, or the standard install location and profile otherwise),
+  places it on the virtual display, maximized, before the menu shows up (feature `auto_place_window`),
+  then fullscreens it right before recording starts and puts it back afterwards; moving it by hand
+  (**Win + Shift + Right Arrow**) is a fallback for when that feature is off or doesn't work for you.
+  `scripts\windows\launch_chrome.bat` (`vrec --launch-chrome`) opens that same recording Chrome and
+  places it the same way, whatever `auto_start_chrome` says, then exits, so you can log in to a site
+  before running `start.bat`/`test.bat`.
 - **OBS** is controlled through its WebSocket API: starting/stopping recordings, checking the current
   scene, and reading the audio meter. By default vrec also starts OBS itself if it isn't already open
   (feature `auto_start_obs`, using `[obs] path` if you set it, or the registry/default install location
@@ -94,12 +97,13 @@ Unattended OBS recording of web videos, one after another.
 5. Run `scripts\windows\test.bat` for a quick 30-second test and diagnostic.
 6. Run `scripts\windows\start.bat` to record your list.
 
-You don't need to open OBS or the recording Chrome by hand first: by default vrec starts OBS itself
-if it isn't already open (feature `auto_start_obs`), moves it to the virtual display for you before
-each run (feature `auto_place_window`), and also starts the recording Chrome itself if its debug port
-doesn't answer (feature `auto_start_chrome`) — both are left open afterwards. Run
-`scripts\windows\launch_chrome.bat` yourself the first time (or whenever you need to), to log in to a
-site in that dedicated Chrome profile before recording.
+You don't need to open OBS or the recording Chrome by hand first: by default vrec starts OBS itself if
+it isn't already open (feature `auto_start_obs`), and also starts the recording Chrome itself if its
+debug port doesn't answer (feature `auto_start_chrome`) — both are left open afterwards. Before the menu
+shows up, vrec also places Chrome on the virtual display, maximized (feature `auto_place_window`), so
+it's ready and visible while you pick videos. Run `scripts\windows\launch_chrome.bat` the first time (or
+whenever you need to): it opens that same recording Chrome and places it the same way, whatever
+`auto_start_chrome` says, then exits, so you can log in to a site before running `start.bat`/`test.bat`.
 
 ## Usage
 
@@ -160,7 +164,7 @@ output in a bug report.
 ### CLI flags
 
 ```
-vrec [--test] [--data-dir DIR] [--config FILE] [--pause-on-exit]
+vrec [--test] [--data-dir DIR] [--config FILE] [--pause-on-exit] [--launch-chrome]
      [--all | --only LIST] [--doctor] [--features] [--enable NAME...] [--disable NAME...]
      [--schedule ACTION... [--days MON,TUE,...]]
      [--install-display-helper [PATTERN] | --uninstall-display-helper] [--version]
@@ -172,6 +176,7 @@ vrec [--test] [--data-dir DIR] [--config FILE] [--pause-on-exit]
 | `--data-dir DIR` | folder for videos.txt, config.toml, history.json (default: `VREC_DATA_DIR` env var, else `./data`) |
 | `--config FILE` | config file path (default: `<data-dir>/config.toml`) |
 | `--pause-on-exit` | wait for Enter before closing (used by the `.bat` files) |
+| `--launch-chrome` | open the recording Chrome on the virtual screen (e.g. to log in), then exit |
 | `--all` | record every video still to do (NEW/FAILED), no menu |
 | `--only LIST` | record exactly these numbers, e.g. `3,1,5-8`, no menu |
 | `--doctor` | check your setup (OBS, Chrome, disk...) without recording |
@@ -224,8 +229,7 @@ Environment variables:
 |---|---|
 | `VREC_DATA_DIR` | Overrides the data directory (default `./data`) |
 | `VREC_OBS_PASSWORD` | OBS WebSocket password, skips the password file/prompt |
-| `VREC_CHROME_PORT` | Chrome DevTools port that `launch_chrome.bat` starts Chrome with (default `9222`). vrec itself connects on `[chrome] debug_port` from `config.toml`, so change both together if you use a non-default port. |
-| `VREC_CHROME_PROFILE` | Chrome profile directory used by `launch_chrome.bat` (default `%LOCALAPPDATA%\vrec\chrome-profile`) |
+| `VREC_CHROME_PROFILE` | Chrome profile directory vrec starts the recording Chrome with — including via `launch_chrome.bat` (`vrec --launch-chrome`) — when `[chrome] profile` isn't set in `config.toml` (default `%LOCALAPPDATA%\vrec\chrome-profile`) |
 
 ## Features on/off
 

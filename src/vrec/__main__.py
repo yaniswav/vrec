@@ -52,6 +52,11 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_selection_arguments(parser)
     _add_display_arguments(parser)
     _add_diagnostic_arguments(parser)
+    parser.add_argument(
+        "--launch-chrome",
+        action="store_true",
+        help="open the recording Chrome on the virtual screen (e.g. to log in), then exit",
+    )
     return parser
 
 
@@ -224,6 +229,9 @@ def _dispatch(args: argparse.Namespace, paths: Paths, features: FeatureSet) -> i
     except ImportError:
         print("Missing dependencies. Run scripts\\windows\\install.bat (or: pip install -e .).")
         return 1
+
+    if args.launch_chrome:
+        return app.launch_chrome(paths.data_dir, paths.config)
 
     if args.doctor:
         from vrec.config import Settings, load_settings

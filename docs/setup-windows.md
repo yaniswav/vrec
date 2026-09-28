@@ -100,13 +100,19 @@ By default, vrec starts the recording Chrome itself if its debug port doesn't an
 afterwards. You still need `launch_chrome.bat` once, the first time, to log in to any site you need
 to in that profile:
 
-1. Double-click `scripts\windows\launch_chrome.bat`. It opens a separate Chrome window on a dedicated
-   profile (so it doesn't interfere with your everyday browsing).
+1. Double-click `scripts\windows\launch_chrome.bat`. It runs `vrec --launch-chrome`, which opens the
+   recording Chrome on its dedicated profile (so it doesn't interfere with your everyday browsing) —
+   whatever `auto_start_chrome` says — and, by default, moves that window to the virtual display and
+   maximizes it there (feature `auto_place_window`). On a fresh profile, Chrome starts quietly: no
+   welcome, default-browser, or search-engine-choice screens pop up on top. Once it's done, it prints
+   "Chrome is ready. Log in to the site in that window if needed, then run start.bat or test.bat." and
+   exits.
 2. Log in to any site you need to, in that window.
-3. By default, vrec moves this window to the virtual display and maximizes it there itself, before
-   each run, and puts it back afterwards (feature `auto_place_window`). If you turn that feature off,
-   or it doesn't work for you, do it by hand instead: click the window, press **Win + Shift + Right
-   Arrow** (repeat until it lands on the virtual display), then maximize it.
+3. If `auto_place_window` is off, or it doesn't work for you, move the window to the virtual display by
+   hand instead: click it, press **Win + Shift + Right Arrow** (repeat until it lands on the virtual
+   display), then maximize it. A normal run (`start.bat`/`test.bat`) places Chrome on the virtual
+   display, maximized, the same way, before its menu even shows up — so it's ready and visible while
+   you pick videos — and fullscreens it only right before recording starts.
 4. Never minimize the window while vrec is running — a minimized window can't be captured or
    controlled correctly.
 

@@ -200,7 +200,7 @@ def test_start_obs_uses_the_right_argv_cwd_and_flags(tmp_path: Path) -> None:
     assert kwargs["stderr"] == subprocess.DEVNULL
 
 
-def test_start_chrome_uses_the_same_flags_as_the_bat_file(tmp_path: Path) -> None:
+def test_start_chrome_flags(tmp_path: Path) -> None:
     exe = tmp_path / "chrome.exe"
     profile = tmp_path / "chrome-profile"
     calls: list[tuple[list[str], dict[str, object]]] = []
@@ -219,6 +219,9 @@ def test_start_chrome_uses_the_same_flags_as_the_bat_file(tmp_path: Path) -> Non
         "--autoplay-policy=no-user-gesture-required",
         "--disable-features=CalculateNativeWinOcclusion",
         "--disable-backgrounding-occluded-windows",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-search-engine-choice-screen",
     ]
     assert kwargs["creationflags"] == subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     assert kwargs["stdin"] == subprocess.DEVNULL
@@ -265,7 +268,12 @@ def test_ensure_obs_starts_and_connects_after_retries(tmp_path: Path) -> None:
     started: list[Path] = []
     sleeps: list[float] = []
     readied: list[tuple[object, float]] = []
-    clock_values = iter([0.0, 2.0, 4.0, 6.0, 8.0, 10.0])
+    now = [0.0]
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        now[0] += seconds
+
     exe = tmp_path / "obs64.exe"
 
     result = launcher.ensure_obs(
@@ -276,8 +284,8 @@ def test_ensure_obs_starts_and_connects_after_retries(tmp_path: Path) -> None:
         find=lambda s: exe,
         running=lambda: False,
         start=lambda e: started.append(e),
-        sleep=sleeps.append,
-        clock=lambda: next(clock_values),
+        sleep=sleep,
+        clock=lambda: now[0],
         ready=lambda c, timeout: readied.append((c, timeout)),
     )
 
@@ -324,7 +332,10 @@ def test_ensure_obs_timeout_errors(tmp_path: Path) -> None:
     def connect(settings: Settings, paths: Paths) -> tuple[object, str]:
         raise obs_control.ObsUnreachable("nope")
 
-    clock_values = iter([0.0, 100.0])
+    now = [0.0]
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
 
     with pytest.raises(VrecError, match="doesn't answer"):
         launcher.ensure_obs(
@@ -335,8 +346,8 @@ def test_ensure_obs_timeout_errors(tmp_path: Path) -> None:
             running=lambda: False,
             find=lambda s: tmp_path / "obs64.exe",
             start=lambda e: None,
-            sleep=lambda s: None,
-            clock=lambda: next(clock_values),
+            sleep=sleep,
+            clock=lambda: now[0],
         )
 
 
