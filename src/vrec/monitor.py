@@ -1,0 +1,267 @@
+"""Playback monitoring: the loop that runs while a video is being recorded.
+
+It watches the player, pauses OBS while the player buffers, and decides when to stop.
+Everything it touches goes through two small interfaces (`Player` and `Capture`) and a
+clock, so the whole loop can be exercised in tests with fakes, without Chrome or OBS.
+"""
+
+from __future__ import annotations
+
+import math
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Protocol, TypedDict
+
+from vrec.console import human_duration
+
+# While buffering, resume once the reserve has stopped growing for this long: some players
+# cap their buffer by size, so at high bitrates the resume threshold may never be reached.
+PLATEAU_S = 5.0
+# Seconds between two checks of the player.
+TICK_S = 0.5
+# The page may pause the video on its own (focus loss, autoplay rules...): replay it at most
+# this many times in a row without progress.
+MAX_REPLAYS = 5
+
+
+class StopReason(StrEnum):
+    ENDED = "ended"
+    TEST_DONE = "test finished"
+    TIME_LIMIT = "time limit reached"
+    VIDEO_GONE = "video removed from page"
+    STALLED = "loading stalled"
+    BLACK = "black image"
+    TOO_LONG = "took too long"
+
+
+class PlayerState(TypedDict):
+    """The video element's state, as reported by js/state.js."""
+
+    ended: bool
+    t: float
+    d: float
+    paused: bool
+    w: int
+    h: int
+    buffer: float
+
+
+class Player(Protocol):
+    """The video in the page."""
+
+    def state(self) -> PlayerState | None:
+        """The video's current state, or None if it left the page."""
+
+    def play(self) -> None: ...
+
+    def pause(self) -> None: ...
+
+    def wait(self, seconds: float) -> None: ...
+
+
+class Capture(Protocol):
+    """The recorder (OBS) as seen by the loop."""
+
+    def pause(self) -> None:
+        """Pause the recording. Raises if the recorder refuses."""
+
+    def resume(self) -> None: ...
+
+    def is_black(self) -> bool | None:
+        """Whether the captured image is black; None if it couldn't be checked."""
+
+    def audio_peak(self) -> float | None:
+        """Loudest audio level since the recording started; None if unavailable."""
+
+
+@dataclass(frozen=True)
+class WatchConfig:
+    """Everything the loop needs to decide, computed once per video."""
+
+    duration: float  # seconds, may be NaN/inf when unknown
+    test_mode: bool = False
+    test_duration_s: float = 30
+    pause_below_s: float = 2
+    resume_at_s: float = 10
+    max_stall_s: float = 300
+    abort_if_black_after_s: float = 60
+    audio_level: float = 0.003
+    max_wall_factor: float = 3
+    max_wall_extra_s: float = 600
+    target_height: int = 0  # height asked from the player (0 = unknown): used for the quality warning
+    buffer_pause: bool = True
+    black_check: bool = True
+    audio_check: bool = True
+    wall_clock_cap: bool = True
+
+    def soft_limit(self) -> float:
+        """Playing time (pauses excluded) after which the end is considered missed."""
+        if self.test_mode:
+            return self.test_duration_s
+        if _known(self.duration):
+            return self.duration + 120
+        return 4 * 3600
+
+    def wall_limit(self) -> float:
+        """Wall-clock seconds after which the video is abandoned, pauses included (inf = no cap)."""
+        if not self.wall_clock_cap:
+            return math.inf
+        if self.test_mode:
+            base = self.test_duration_s
+        elif _known(self.duration) and self.duration > 0:
+            base = self.duration * self.max_wall_factor
+        else:
+            base = 4 * 3600
+        return base + self.max_wall_extra_s
+
+
+@dataclass
+class WatchOutcome:
+    reason: StopReason
+    image_ok: bool | None = False  # None: not checked (black_check off)
+    max_resolution: tuple[int, int] = field(default=(0, 0))
+    buffering_pauses: int = 0
+
+
+@dataclass
+class Output:
+    """Where the loop reports: one-off warnings, and a progress line rewritten in place."""
+
+    warn: Callable[[str], None]
+    progress: Callable[[str], None]
+    end_progress: Callable[[], None]
+
+
+def _known(value: float | None) -> bool:
+    return bool(value) and math.isfinite(value)  # type: ignore[arg-type]
+
+
+def watch(
+    player: Player,
+    capture: Capture,
+    config: WatchConfig,
+    output: Output,
+    clock: Callable[[], float] = time.time,
+) -> WatchOutcome:
+    """Follow playback until the video ends or a stop condition is met."""
+    outcome = WatchOutcome(reason=StopReason.ENDED, image_ok=False if config.black_check else None)
+    start = clock()
+    soft_limit = config.soft_limit()
+    wall_deadline = start + config.wall_limit()
+
+    last_t, last_progress = -1.0, start
+    audio_warned = stall_warned = quality_warned = False
+    replays = 0
+    next_black_check = start + 3
+    buffering, buffering_start, paused_time = False, 0.0, 0.0
+    pause_allowed = config.buffer_pause
+    best_buffer, last_growth = 0.0, 0.0
+
+    while True:
+        player.wait(TICK_S)
+        now = clock()
+        elapsed = now - start - paused_time - (now - buffering_start if buffering else 0)
+        state = player.state()
+        if state is None:
+            outcome.reason = StopReason.VIDEO_GONE
+            break
+        if state["ended"]:
+            outcome.reason = StopReason.ENDED
+            break
+        if elapsed > soft_limit:
+            outcome.reason = StopReason.TEST_DONE if config.test_mode else StopReason.TIME_LIMIT
+            break
+        if now >= wall_deadline:
+            # Stops even mid-buffering: OBS can stop a paused recording just fine.
+            outcome.reason = StopReason.TOO_LONG
+            break
+
+        video_duration = state["d"]
+        remaining = video_duration - state["t"] if _known(video_duration) else math.inf
+        buffer = state["buffer"]
+
+        # Buffering: both the video and the recording are paused.
+        if buffering:
+            waited = now - buffering_start
+            if buffer > best_buffer + 0.5:
+                best_buffer, last_growth = buffer, now
+            enough = buffer >= min(config.resume_at_s, remaining - 0.5)
+            plateaued = now - last_growth >= PLATEAU_S and buffer >= config.pause_below_s + 2
+            output.progress(f"Buffering... {buffer:4.1f} s in reserve (recording paused)")
+            if enough or plateaued:
+                capture.resume()
+                player.play()
+                paused_time += waited
+                buffering = False
+            elif waited > config.max_stall_s:
+                outcome.reason = StopReason.STALLED
+                break
+            continue
+
+        # Buffer almost empty: pause everything BEFORE the image freezes.
+        if pause_allowed and buffer < config.pause_below_s and remaining > config.pause_below_s + 1:
+            player.pause()
+            try:
+                capture.pause()
+            except Exception:
+                pause_allowed = False
+                player.play()
+                output.warn("OBS refuses to pause: buffering will be recorded (frozen image).")
+            else:
+                buffering, buffering_start = True, now
+                best_buffer, last_growth = buffer, now
+                outcome.buffering_pauses += 1
+                output.end_progress()
+            continue
+
+        if _known(video_duration):
+            output.progress(
+                f"Playing {state['t'] / video_duration:6.1%}  "
+                f"({human_duration(state['t'])} / {human_duration(video_duration)})"
+            )
+
+        if state["t"] != last_t:
+            last_t, last_progress = state["t"], now
+            replays = 0
+        elif now - last_progress > 15 and not stall_warned:
+            output.warn("The video isn't advancing (loading?). Recording continues.")
+            stall_warned = True
+
+        if state["paused"] and replays < MAX_REPLAYS:  # the page paused on its own
+            player.play()
+            replays += 1
+
+        if state["h"] > outcome.max_resolution[1]:
+            outcome.max_resolution = (state["w"], state["h"])
+        if (
+            config.target_height
+            and not quality_warned
+            and elapsed > 20
+            and outcome.max_resolution[1] < config.target_height * 0.9
+        ):
+            w, h = outcome.max_resolution
+            output.warn(f"Quality lower than expected ({w}x{h}). Connection too slow?")
+            quality_warned = True
+
+        if config.black_check and not outcome.image_ok and now >= next_black_check:
+            black = capture.is_black()
+            if black is None:
+                next_black_check = now + 5  # screenshot failed: retry later, don't abort
+            elif black:
+                next_black_check = now + 5
+                if elapsed > config.abort_if_black_after_s:
+                    outcome.reason = StopReason.BLACK
+                    break
+            else:
+                outcome.image_ok = True
+
+        if config.audio_check and not audio_warned and elapsed > 20:
+            peak = capture.audio_peak()
+            if peak is not None and peak < config.audio_level:
+                output.warn("No audio detected. Check that Chrome is routed to CABLE Input.")
+                audio_warned = True
+
+    output.end_progress()
+    return outcome

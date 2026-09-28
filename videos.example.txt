@@ -1,0 +1,17 @@
+# One video link per line.
+#
+# Lines starting with "#" are ignored, and so are duplicate links.
+#
+# Two formats are supported, and can be mixed freely:
+#
+# 1) A plain link on its own line:
+https://example.com/videos/sample-one
+
+# 2) A title line followed by its link on the next line, as produced by
+#    "copy all tabs" browser extensions. The title is then used as the
+#    recorded file's name.
+Sample Video Two
+https://example.com/videos/sample-two
+
+Sample Video Three
+https://example.com/videos/sample-three
