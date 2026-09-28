@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import json
 import shutil
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,7 +20,7 @@ from pathlib import Path
 import obsws_python as obs
 from playwright.sync_api import Browser, Page
 
-from vrec import display, history, launcher, menu, obs_control, obs_scene, power, preflight
+from vrec import display, history, launcher, menu, notify, obs_control, obs_scene, power, preflight
 from vrec.browser import (
     WindowBounds,
     connect_browser,
@@ -29,7 +30,7 @@ from vrec.browser import (
     window_state,
 )
 from vrec.config import Paths, Settings, load_settings
-from vrec.console import first_line, warn
+from vrec.console import first_line, human_duration, warn
 from vrec.errors import VrecError
 from vrec.features import FeatureSet, load_features
 from vrec.lock import InstanceLock
@@ -74,6 +75,7 @@ class Batch:
     previous_scene: str | None = None  # program scene to switch back to
     interactive: bool = False
     kept_awake: bool = False  # this run asked Windows not to sleep
+    started_at: float = field(default_factory=time.time)
 
 
 def run(
@@ -634,13 +636,18 @@ def _cleanup_audio(batch: Batch) -> None:
             batch.listener.disconnect()
 
 
-def _final_report(batch: Batch) -> int:
+def _final_report(batch: Batch, send: Callable[[str, str], bool] = notify.notify) -> int:
     if not batch.results:
         return 0
+    elapsed = time.time() - batch.started_at
     if batch.test_mode:
         _print_diagnostic(batch.results[0])
+        title, text = "vrec: test finished", status_text(batch.results[0])
     else:
-        _print_summary(batch.results, batch.paths.history)
+        _print_summary(batch.results, batch.paths.history, elapsed)
+        title, text = "vrec: batch finished", summary_line(batch.results, elapsed)
+    if batch.features.enabled("notify_when_done"):
+        send(title, text)
     return 0
 
 
@@ -690,8 +697,29 @@ def _print_diagnostic(result: RecordingResult) -> None:
     print("\nOpen the file to check it, then run start.bat.")
 
 
-def _print_summary(results: list[RecordingResult], history_path: Path) -> None:
+def _print_summary(results: list[RecordingResult], history_path: Path, elapsed_s: float = 0.0) -> None:
     print("===== SUMMARY =====")
     for result in results:
         print(f"{result.number:2d}. {status_text(result):<40} {result.title}")
-    print(f"\nHistory updated ({history_path.name}).")
+    print()
+    print(summary_line(results, elapsed_s))
+    print(f"History updated ({history_path.name}).")
+
+
+def summary_line(results: list[RecordingResult], elapsed_s: float) -> str:
+    """One line of totals: how many OK, how much video, how big, how long it took."""
+    ok = sum(1 for r in results if status_text(r) == "OK")
+    recorded = sum(r.duration_s for r in results if status_text(r) == "OK")
+    size = 0
+    for r in results:
+        if r.file:
+            with contextlib.suppress(OSError):
+                size += r.file.stat().st_size
+    parts = [f"{ok}/{len(results)} OK"]
+    if recorded:
+        parts.append(f"{human_duration(recorded)} of video")
+    if size:
+        parts.append(f"{size / 1e9:.1f} GB")
+    if elapsed_s:
+        parts.append(f"done in {human_duration(elapsed_s)}")
+    return " - ".join(parts)

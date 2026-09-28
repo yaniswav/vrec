@@ -52,6 +52,7 @@ class RecordingResult:
     target_height: int = 0  # height vrec asked the player for (0 = unknown)
     max_resolution: tuple[int, int] = field(default=(0, 0))
     buffering_pauses: int = 0
+    duration_s: float = 0.0  # length of the video (0 = unknown)
 
 
 class _PagePlayer:
@@ -117,6 +118,8 @@ def record_one(
     with document_script(page, f"window.__vrecMaxHeight = {int(max_height)};"):
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
     duration = page.evaluate(load_js("pick_video.js"))
+    if isinstance(duration, int | float) and math.isfinite(duration) and duration > 0:
+        result.duration_s = float(duration)
     result.title = title or clean_title(page.title())
     print(f"   {result.title if not title else url}  -  duration {human_duration(duration)}")
 

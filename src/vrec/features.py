@@ -46,6 +46,7 @@ REGISTRY: tuple[Feature, ...] = (
     Feature("protect_console", "Stop a click in the vrec window from pausing it (Windows QuickEdit)"),
     Feature("disk_space_guard", "Stop the batch before a video when the recording disk is almost full"),
     Feature("keep_awake", "Keep Windows from sleeping or turning the screens off while recording"),
+    Feature("notify_when_done", "Show a Windows notification when a batch or a test is over"),
 )
 
 _BY_NAME: dict[str, Feature] = {feature.name: feature for feature in REGISTRY}

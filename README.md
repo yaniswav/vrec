@@ -263,6 +263,7 @@ the single-instance lock (`data\vrec.lock`).
 | `protect_console` | ON | Stop a click in the vrec window from pausing it (Windows QuickEdit) |
 | `keep_awake` | ON | Keep Windows from sleeping or turning the screens off while recording |
 | `disk_space_guard` | ON | Stop the batch before a video when the recording disk is almost full |
+| `notify_when_done` | ON | Show a Windows notification when a batch or a test is over |
 
 ## Output files & statuses
 

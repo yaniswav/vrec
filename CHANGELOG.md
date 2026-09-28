@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `notify_when_done` feature (on by default): a Windows notification when a batch or a test is over,
+  with the totals; the batch summary now ends with a totals line (OK count, video length, size,
+  time taken).
 - `disk_space_guard` feature (on by default, `[recording] min_free_gb`, 5 GB): the batch stops before
   a video when the OBS recording folder is almost full, instead of OBS failing mid-recording.
 - `keep_awake` feature (on by default): while a batch records, Windows is asked not to sleep or turn

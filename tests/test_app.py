@@ -405,3 +405,23 @@ def test_disk_space_unknown_never_blocks(tmp_path: Path) -> None:
 
     app._record_batch(batch, [("https://x/1", "Video 1")], record=record, free_bytes=broken)
     assert len(record.calls) == 1  # type: ignore[attr-defined]
+
+
+# ---------- end-of-batch totals ----------
+
+
+def test_summary_line_totals(tmp_path: Path) -> None:
+    a = tmp_path / "a.mkv"
+    a.write_bytes(b"x" * 1000)
+    ok = make_result(title="A")
+    ok.duration_s, ok.file = 600.0, a
+    failed = make_result(title="B")
+    failed.reason = "ERROR: boom"
+    failed.duration_s = 300.0
+    line = app.summary_line([ok, failed], elapsed_s=3725)
+    assert line.startswith("1/2 OK - 10:00 of video")
+    assert line.endswith("done in 1:02:05")
+
+
+def test_summary_line_minimal() -> None:
+    assert app.summary_line([], 0) == "0/0 OK"
