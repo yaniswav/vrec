@@ -137,3 +137,54 @@ def test_screen_and_chrome_are_ready_before_the_menu(tmp_path, monkeypatch):
         "_restore_scene",
         "_virtual_display_off",
     ]
+
+
+def test_windows_stays_awake_only_while_recording(tmp_path, monkeypatch):
+    calls: list[str] = []
+    client = SimpleNamespace()
+    monkeypatch.setattr(app, "_load_inputs", lambda paths: ([("https://x.test/1", "One")], {}))
+    monkeypatch.setattr(app, "_connect_obs", lambda *a: (client, "pw"))
+    monkeypatch.setattr(app.obs_control, "current_scene", lambda c: "Main")
+    for step in (
+        "_virtual_display_on",
+        "_start_chrome_if_needed",
+        "_place_chrome_early",
+        "_cleanup_audio",
+        "_restore_scene",
+        "_virtual_display_off",
+    ):
+        monkeypatch.setattr(app, step, lambda batch: None)
+    monkeypatch.setattr(app.power, "stay_awake", lambda: calls.append("awake") or True)
+    monkeypatch.setattr(app.power, "allow_sleep", lambda: calls.append("sleep ok"))
+
+    def fail_scene(batch: app.Batch) -> None:
+        calls.append("recording")
+        raise VrecError("stop here")
+
+    monkeypatch.setattr(app, "_prepare_scene", fail_scene)
+    monkeypatch.setattr(app, "_choose_selection", lambda *a: ([("https://x.test/1", "One")], False))
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    with pytest.raises(VrecError):
+        app._run_locked(paths, Settings(), FeatureSet(), False, True, None)
+    assert calls == ["awake", "recording", "sleep ok"]  # released even when the batch fails
+
+
+def test_keep_awake_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "_load_inputs", lambda paths: ([("https://x.test/1", "One")], {}))
+    monkeypatch.setattr(app, "_connect_obs", lambda *a: (SimpleNamespace(), "pw"))
+    monkeypatch.setattr(app.obs_control, "current_scene", lambda c: "Main")
+    for step in (
+        "_virtual_display_on",
+        "_start_chrome_if_needed",
+        "_place_chrome_early",
+        "_cleanup_audio",
+        "_restore_scene",
+        "_virtual_display_off",
+    ):
+        monkeypatch.setattr(app, step, lambda batch: None)
+    monkeypatch.setattr(app.power, "stay_awake", lambda: pytest.fail("feature is off"))
+    monkeypatch.setattr(app, "_prepare_scene", lambda batch: (_ for _ in ()).throw(VrecError("stop")))
+    monkeypatch.setattr(app, "_choose_selection", lambda *a: ([("https://x.test/1", "One")], False))
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    with pytest.raises(VrecError):
+        app._run_locked(paths, Settings(), FeatureSet({"keep_awake": False}), False, True, None)

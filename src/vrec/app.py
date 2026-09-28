@@ -18,7 +18,7 @@ from pathlib import Path
 import obsws_python as obs
 from playwright.sync_api import Browser, Page
 
-from vrec import display, history, launcher, menu, obs_control, obs_scene, preflight
+from vrec import display, history, launcher, menu, obs_control, obs_scene, power, preflight
 from vrec.browser import (
     WindowBounds,
     connect_browser,
@@ -72,6 +72,7 @@ class Batch:
     capture: str = ""  # vrec's display capture source (obs_scene feature)
     previous_scene: str | None = None  # program scene to switch back to
     interactive: bool = False
+    kept_awake: bool = False  # this run asked Windows not to sleep
 
 
 def run(
@@ -131,6 +132,8 @@ def _run_locked(
         if not selection:
             return 0
 
+        if features.enabled("keep_awake"):
+            batch.kept_awake = power.stay_awake()
         _prepare_scene(batch)
         _prepare_audio(batch)
         with connect_browser(
@@ -164,6 +167,8 @@ def _run_locked(
         _cleanup_audio(batch)
         _restore_scene(batch)
         _virtual_display_off(batch)
+        if batch.kept_awake:
+            power.allow_sleep()
 
     return _final_report(batch)
 

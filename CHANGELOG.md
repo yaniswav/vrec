@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `keep_awake` feature (on by default): while a batch records, Windows is asked not to sleep or turn
+  the screens off (nothing is changed in the power settings; back to normal when vrec stops).
 - `protect_console` feature (on by default): turns off the console's QuickEdit mode while vrec runs, so
   a stray click in its window can no longer pause it mid-recording.
 - `--launch-chrome` (what `scripts\windows\launch_chrome.bat` now runs, as `vrec --launch-chrome

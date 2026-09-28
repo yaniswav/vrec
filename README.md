@@ -260,6 +260,7 @@ the single-instance lock (`data\vrec.lock`).
 | `obs_scene` | ON | Record from vrec's own OBS scene (created if missing), then switch back |
 | `preflight_check` | ON | Before a batch, check screen, window, OBS capture and sound end to end |
 | `protect_console` | ON | Stop a click in the vrec window from pausing it (Windows QuickEdit) |
+| `keep_awake` | ON | Keep Windows from sleeping or turning the screens off while recording |
 
 ## Output files & statuses
 
