@@ -8,7 +8,7 @@ from collections.abc import Sequence
 import pytest
 
 from vrec import display
-from vrec.display import Screen, pick_screen, wait_for_screen
+from vrec.display import Screen, pick_screen
 from vrec.errors import VrecError
 
 MAIN = Screen("DISPLAY1", 0, 0, 2560, 1440, primary=True)
@@ -53,20 +53,6 @@ def test_pick_screen(wanted, expected):
 def test_pick_screen_auto_needs_a_second_screen():
     assert pick_screen([MAIN], "auto") is None
     assert pick_screen([], "auto") is None
-
-
-def test_wait_for_screen_polls_until_it_appears():
-    answers = iter([[MAIN], [MAIN], [MAIN, VIRTUAL]])
-    sleeps: list[float] = []
-    screen = wait_for_screen("auto", timeout_s=15, lister=lambda: next(answers), sleep=sleeps.append)
-    assert screen == VIRTUAL
-    assert sleeps == [0.5, 0.5]
-
-
-def test_wait_for_screen_gives_up():
-    sleeps: list[float] = []
-    assert wait_for_screen("auto", timeout_s=2, lister=lambda: [MAIN], sleep=sleeps.append) is None
-    assert sum(sleeps) == 2
 
 
 def test_helper_script_escapes_the_pattern():
@@ -138,11 +124,6 @@ def test_set_virtual_display_runs_the_right_task():
 def test_set_virtual_display_without_helper():
     with pytest.raises(VrecError, match="install-display-helper"):
         display.set_virtual_display(True, run=FakeRunner(returncode=1))
-
-
-def test_helper_installed():
-    assert display.helper_installed(run=FakeRunner()) is True
-    assert display.helper_installed(run=FakeRunner(returncode=1)) is False
 
 
 def test_list_display_devices():

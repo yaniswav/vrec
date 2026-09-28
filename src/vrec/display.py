@@ -123,22 +123,6 @@ def pick_screen(screens: Sequence[Screen], wanted: str = "auto") -> Screen | Non
     return next((s for s in screens if wanted.lower() in s.name.lower()), None)
 
 
-def wait_for_screen(
-    wanted: str,
-    timeout_s: float = 15,
-    lister: Callable[[], list[Screen]] = list_screens,
-    sleep: Callable[[float], None] = time.sleep,
-) -> Screen | None:
-    """Poll until the wanted screen shows up (after turning the virtual display on)."""
-    waited = 0.0
-    while True:
-        screen = pick_screen(lister(), wanted)
-        if screen or waited >= timeout_s:
-            return screen
-        sleep(0.5)
-        waited += 0.5
-
-
 def wait_for_new_screen(
     before: Sequence[Screen],
     timeout_s: float = 15,
@@ -276,10 +260,6 @@ def uninstall_helper(run: Runner = _run) -> None:
         run(["schtasks", "/Delete", "/F", "/TN", task])
     helper_script_path().unlink(missing_ok=True)
     helper_pattern_path().unlink(missing_ok=True)
-
-
-def helper_installed(run: Runner = _run) -> bool:
-    return all(run(["schtasks", "/Query", "/TN", task]).returncode == 0 for task in (TASK_ON, TASK_OFF))
 
 
 def set_virtual_display(on: bool, run: Runner = _run) -> None:
