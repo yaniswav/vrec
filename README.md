@@ -1,5 +1,10 @@
 # vrec
 
+[![CI](https://github.com/yaniswav/vrec/actions/workflows/ci.yml/badge.svg)](https://github.com/yaniswav/vrec/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+![Windows](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-lightgrey.svg)
+
 Unattended OBS recording of web videos, one after another.
 
 ## What it does
@@ -19,6 +24,35 @@ Unattended OBS recording of web videos, one after another.
   second, invisible display, and you don't hear the videos.
 - Can also run with no menu at all (`--all`/`--only`, or on a schedule) and checks your setup for
   common problems before you start (`vrec --doctor`).
+
+## What a check looks like
+
+`vrec --doctor` checks your setup without recording anything. With OBS and the recording Chrome
+closed, it tells you what vrec will do about them:
+
+```text
+===== VREC DOCTOR =====
+
+[ OK ] Playlist file: 30 link(s) in videos.txt.
+[ OK ] Config file: Not found: using built-in defaults.
+[INFO] Feature toggles: Disabled: manage_virtual_display.
+[INFO] OBS connection: Not open: vrec will start it (C:\Program Files\obs-studioin4bit\obs64.exe).
+[INFO] Video sound: Sent to "CABLE Input" by vrec for the recorded page only (checked at each video).
+[INFO] Chrome debugging port: Not open: vrec will start it (C:\Program Files\Google\Chrome\Application\chrome.exe, ...).
+[ OK ] Virtual screen: DISPLAY12 (3840x2160, screen).
+
+3 OK, 0 warning(s), 0 failure(s), 12 info.
+```
+
+Before the first video of a batch, the pre-flight check proves the whole chain works:
+
+```text
+Checking everything before recording...
+  [ OK ] Virtual screen: DISPLAY12 (3840x2160, screen)
+  [ OK ] Chrome window: on DISPLAY12, fullscreen
+  [ OK ] OBS sees Chrome: 'vrec screen' shows the Chrome window
+  [ OK ] Sound reaches OBS: tone played on CABLE Input (VB-Audio Virtual Cable)
+```
 
 ## How it works
 
