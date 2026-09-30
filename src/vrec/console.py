@@ -48,6 +48,39 @@ class ProgressLine:
             self._width = 0
 
 
+def console_process_count() -> int | None:
+    """How many processes are attached to this console (Windows only), or None if unknown."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+
+    pids = (ctypes.c_ulong * 4)()
+    count = int(ctypes.windll.kernel32.GetConsoleProcessList(pids, len(pids)))
+    return count or None  # 0 means the call failed (no console)
+
+
+def opened_by_double_click(
+    frozen: bool | None = None, count: int | None = None, interactive: bool | None = None
+) -> bool:
+    """True when vrec.exe was started by a double-click, so its console closes with it.
+
+    Windows creates a console for the program alone in that case: it is then the only process attached
+    to it. Only the packaged exe asks (from a terminal or a script the count is higher), and only with
+    a keyboard to answer (a scheduled run has none). The arguments exist for tests.
+    """
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False))
+    if not frozen:
+        return False
+    if interactive is None:
+        interactive = sys.stdin is not None and sys.stdin.isatty()
+    if not interactive:
+        return False
+    if count is None:
+        count = console_process_count()
+    return count == 1
+
+
 # ---------- Windows console: a click must not freeze vrec ----------
 
 _ENABLE_QUICK_EDIT_MODE = 0x0040

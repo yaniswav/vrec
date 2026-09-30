@@ -53,6 +53,26 @@ jobs:
           name: dist
           path: dist/
 
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install ".[build]"
+      - run: python packaging/build_exe.py
+      - name: Smoke-test vrec.exe
+        shell: bash
+        run: |
+          exe="$(ls -d dist/vrec-*-windows)/vrec.exe"
+          "$exe" --version
+          "$exe" --features --data-dir "$RUNNER_TEMP/vrec-smoke"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-zip
+          path: dist/*.zip
+
   test:
     strategy:
       fail-fast: false

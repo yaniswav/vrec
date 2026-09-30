@@ -31,6 +31,16 @@ To check test coverage locally:
 pytest --cov --cov-report=term
 ```
 
+## Building the Windows zip
+
+```
+pip install ".[build]"
+python packaging/build_exe.py
+```
+
+This writes `dist\vrec-<version>-windows.zip` (PyInstaller, onedir). The release workflow builds and
+smoke-tests the same zip, and CI does it on every push. `build/` and `dist/` are git-ignored.
+
 ## Guidelines
 
 - Keep user-facing messages short and friendly: they're read by someone waiting for a recording to

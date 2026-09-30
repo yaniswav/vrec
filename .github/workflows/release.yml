@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -30,7 +30,51 @@ jobs:
             exit 1
           fi
 
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: pip install ".[build]"
+      - run: python packaging/build_exe.py
+
+      - name: Smoke-test vrec.exe
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          exe="$(ls -d dist/vrec-*-windows)/vrec.exe"
+          out="$("$exe" --version)"
+          echo "$out"
+          if [ "$out" != "vrec $tag" ]; then
+            echo "::error::vrec.exe reports '$out', expected 'vrec $tag'"
+            exit 1
+          fi
+          "$exe" --features --data-dir "$RUNNER_TEMP/vrec-smoke"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-zip
+          path: dist/*.zip
+
+  release:
+    needs: [build, windows-exe]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: assets
+          merge-multiple: true
+
       - name: Create GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" assets/* --generate-notes

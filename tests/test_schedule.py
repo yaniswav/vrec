@@ -289,3 +289,10 @@ def test_schedule_status_raises_on_non_windows(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(sys, "platform", "linux")
     with pytest.raises(VrecError, match="Windows"):
         schedule.schedule_status(runner=FakeRunner())
+
+
+def test_launcher_command_of_the_packaged_exe_has_no_module_flag(monkeypatch) -> None:
+    monkeypatch.setattr(schedule.sys, "frozen", True, raising=False)
+    command = schedule._launcher_command(Path("data"), None)
+    assert "-m vrec" not in command
+    assert "--all" in command

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- A standalone Windows build: each release now includes `vrec-<version>-windows.zip`, which runs
+  without Python. It holds `vrec.exe`, the docs, example files and `start.bat`, `test.bat`,
+  `launch_chrome.bat` and `doctor.bat`.
+- `vrec.exe` keeps its window open at the end when started by double-click, as if `--pause-on-exit`
+  were given.
+
 ## [0.1.0] - 2026-09-28
 
 Initial public release.

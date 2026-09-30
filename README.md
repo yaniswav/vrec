@@ -123,6 +123,17 @@ Checking everything before recording...
 
 ## Quick start
 
+### Without Python
+
+1. Download `vrec-<version>-windows.zip` from the [Releases page](https://github.com/yaniswav/vrec/releases)
+   and unzip it anywhere.
+2. Do the one-time setup in [docs/setup-windows.md](docs/setup-windows.md) (OBS, Chrome, VB-CABLE).
+3. Copy `videos.example.txt` to `data\videos.txt` next to `vrec.exe` and add your links.
+4. Double-click `launch_chrome.bat`, log in to the site if needed, then double-click `test.bat`.
+   `doctor.bat` checks your setup and `start.bat` records your list.
+
+### With Python
+
 1. Follow the one-time setup: [docs/setup-windows.md](docs/setup-windows.md).
 2. Run `scripts\windows\install.bat` to install vrec and its dependencies.
 3. Put your links in `data\videos.txt` (see [videos.example.txt](videos.example.txt) for the format).

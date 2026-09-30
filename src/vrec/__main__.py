@@ -269,12 +269,18 @@ def _run_schedule(args: argparse.Namespace) -> int:
     return 0
 
 
+def _opened_by_double_click() -> bool:
+    from vrec.console import opened_by_double_click
+
+    return opened_by_double_click()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     resolved_argv = list(argv) if argv is not None else sys.argv[1:]
     args = parser.parse_args(argv)
     code = _run(args, resolved_argv)
-    if args.pause_on_exit:
+    if args.pause_on_exit or _opened_by_double_click():
         with contextlib.suppress(EOFError):
             input("\nPress Enter to close.")
     return code

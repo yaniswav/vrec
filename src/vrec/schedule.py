@@ -76,7 +76,9 @@ def _launcher_path() -> Path:
 
 
 def _launcher_command(data_dir: Path, config: Path | None) -> str:
-    parts = [f'"{sys.executable}"', "-m", "vrec", "--all", "--data-dir", f'"{data_dir}"']
+    # In the packaged vrec.exe, sys.executable is vrec.exe itself: there is no "-m vrec".
+    module = [] if getattr(sys, "frozen", False) else ["-m", "vrec"]
+    parts = [f'"{sys.executable}"', *module, "--all", "--data-dir", f'"{data_dir}"']
     if config is not None:
         parts += ["--config", f'"{config}"']
     return " ".join(parts)
