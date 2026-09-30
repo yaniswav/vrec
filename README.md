@@ -36,7 +36,7 @@ closed, it tells you what vrec will do about them:
 [ OK ] Playlist file: 30 link(s) in videos.txt.
 [ OK ] Config file: Not found: using built-in defaults.
 [INFO] Feature toggles: Disabled: manage_virtual_display.
-[INFO] OBS connection: Not open: vrec will start it (C:\Program Files\obs-studioin4bit\obs64.exe).
+[INFO] OBS connection: Not open: vrec will start it (C:\Program Files\obs-studio\bin\64bit\obs64.exe).
 [INFO] Video sound: Sent to "CABLE Input" by vrec for the recorded page only (checked at each video).
 [INFO] Chrome debugging port: Not open: vrec will start it (C:\Program Files\Google\Chrome\Application\chrome.exe, ...).
 [ OK ] Virtual screen: DISPLAY12 (3840x2160, screen).
