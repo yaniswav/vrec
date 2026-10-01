@@ -9,6 +9,14 @@ from pathlib import Path
 # Zero-width and bidi-control characters that sometimes sneak into copy-pasted titles/URLs.
 INVISIBLE_CHARS = re.compile("[\u200b-\u200f\u202a-\u202e\u2060\ufeff]")
 
+# ASCII control characters (replaced by a space, then whitespace is collapsed).
+_CONTROL_CHARS = re.compile("[\x00-\x1f\x7f]")
+
+# Windows device names: a file called like this (even with an extension) can't be created.
+_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"} | {f"COM{n}" for n in range(1, 10)} | {f"LPT{n}" for n in range(1, 10)}
+)
+
 # File name prefixes used by recorder.record_one().
 TEST_PREFIX = "TEST"
 FAILED_BLACK_PREFIX = "FAILED black image"
@@ -26,9 +34,14 @@ def clean_title(text: str | None) -> str:
     """Turn a page title into a filesystem-safe recording name."""
     text = INVISIBLE_CHARS.sub("", text or "")
     text = re.sub(r"\s*\|\s*[^|]{1,20}$", "", text)  # strip a trailing " | site name"
+    text = _CONTROL_CHARS.sub(" ", text)
     text = re.sub(r'[\\/:*?"<>|]', "", text)
     text = re.sub(r"\s+", " ", text).strip().rstrip(".")
-    return text[:100] or "video"
+    text = text[:100] or "video"
+    stem, dot, rest = text.partition(".")
+    if stem.strip().upper() in _RESERVED_NAMES:
+        text = stem + "_" + dot + rest
+    return text
 
 
 def find_existing_recording(folder: str | Path | None, title: str | None) -> Path | None:

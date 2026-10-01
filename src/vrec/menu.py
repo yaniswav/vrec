@@ -54,13 +54,17 @@ def show_list(videos: list[tuple[str, str | None]], videos_history: history.Vide
     print("\n===== YOUR VIDEOS (videos.txt) =====")
     for i, (url, title) in enumerate(videos, 1):
         known = videos_history.get(url_key(url))
-        tag = history.label(known["status"] if known else None)
+        if not isinstance(known, dict):
+            known = None
+        tag = history.label(history.status_of(videos_history, url))
         info = []
-        if known and known.get("date"):
-            _, month, day = known["date"][:10].split("-")
-            info.append(f"{day}/{month}")
+        date = known.get("date") if known else None
+        if isinstance(date, str):
+            parts = date[:10].split("-")
+            if len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
+                info.append(f"{parts[2]}/{parts[1]}")
         if known and known.get("detail"):
-            info.append(known["detail"])
+            info.append(str(known["detail"]))
         suffix = f"   ({', '.join(info)})" if info else ""
         print(f"{i:3d}. [{tag:<8}] {history.display_title(videos_history, url, title)[:60]}{suffix}")
 

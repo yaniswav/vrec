@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
@@ -75,19 +76,29 @@ def load(path: Path) -> Videos:
     except FileNotFoundError:
         return {}
     except Exception:
-        broken = path.with_name(path.stem + ".unreadable" + path.suffix)
-        path.replace(broken)
-        print(f"{path.name} was unreadable: set aside as {broken.name}.")
-        return {}
+        return _set_aside(path)
 
-    if isinstance(raw, dict) and raw.get("version") == 1:
-        # Our own previously-saved file (see `save()`), not externally validated, so it is trusted
-        # to match the Videos shape.
-        return cast(Videos, raw.get("videos", {}))
+    if not isinstance(raw, dict):
+        return _set_aside(path)
+    if "version" in raw:
+        videos = raw.get("videos")
+        if raw["version"] != 1 or not isinstance(videos, dict):
+            # A newer (or damaged) file: never overwrite or migrate it.
+            return _set_aside(path)
+        # Our own previously-saved file (see `save()`); drop anything that isn't an entry.
+        return cast(Videos, {k: v for k, v in videos.items() if isinstance(v, dict)})
 
-    videos = _migrate_legacy(raw if isinstance(raw, dict) else {})
+    videos = _migrate_legacy(raw)
     save(path, videos)
     return videos
+
+
+def _set_aside(path: Path) -> Videos:
+    """Rename a history file vrec can't use to history.unreadable.json and start empty."""
+    broken = path.with_name(path.stem + ".unreadable" + path.suffix)
+    path.replace(broken)
+    print(f"{path.name} was unreadable: set aside as {broken.name}.")
+    return {}
 
 
 def _migrate_legacy(raw: dict[str, Any]) -> Videos:
@@ -111,13 +122,23 @@ def _migrate_legacy(raw: dict[str, Any]) -> Videos:
     return videos
 
 
-def save(path: Path, videos: Videos) -> None:
-    """Write the history atomically (write to a temp file, then replace)."""
+def save(path: Path, videos: Videos, sleep: Callable[[float], None] = time.sleep, attempts: int = 5) -> None:
+    """Write the history atomically (write to a temp file, then replace).
+
+    The replace is retried a few times: an antivirus or an editor can hold the file for a moment.
+    """
     tmp = path.with_suffix(".tmp")
     tmp.write_text(
         json.dumps({"version": 1, "videos": videos}, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    tmp.replace(path)
+    for attempt in range(attempts):
+        try:
+            tmp.replace(path)
+            return
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            sleep(0.2)
 
 
 def record(
@@ -145,7 +166,10 @@ def record(
 
 def status_of(videos: Videos, url: str) -> str | None:
     known = videos.get(url_key(url))
-    return known["status"] if known else None
+    if not isinstance(known, dict):
+        return None
+    status = known.get("status")
+    return status if isinstance(status, str) else None
 
 
 def display_title(videos: Videos, url: str, title: str | None) -> str:
@@ -153,7 +177,7 @@ def display_title(videos: Videos, url: str, title: str | None) -> str:
     if title:
         return title
     known = videos.get(url_key(url))
-    if known and known.get("title"):
+    if isinstance(known, dict) and isinstance(known.get("title"), str) and known["title"]:
         return known["title"]
     return url_key(url).rsplit("/", 1)[-1].replace("-", " ").strip() or url
 
