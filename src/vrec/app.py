@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import obsws_python as obs
 from playwright.sync_api import Browser, Page
@@ -34,7 +35,7 @@ from vrec.console import first_line, human_duration, warn
 from vrec.errors import VrecError
 from vrec.features import FeatureSet, load_features
 from vrec.lock import InstanceLock
-from vrec.naming import INTERRUPTED_PREFIX, rename_recording
+from vrec.naming import INTERRUPTED_PREFIX, clean_title, rename_recording
 from vrec.playlist import read_playlist
 from vrec.recorder import (
     RecordingResult,
@@ -67,6 +68,9 @@ class Batch:
     page: Page | None = None
     results: list[RecordingResult] = field(default_factory=list)
     current_title: str = ""
+    current_url: str = ""  # the video being recorded right now ("" between videos)
+    stopped_early: bool = False  # the batch ended before the end of its selection
+    interrupted: bool = False  # Ctrl+C handled inside the batch
     initial_window_state: str | None = None
     initial_bounds: WindowBounds | None = None
     display_turned_on: bool = False
@@ -158,8 +162,8 @@ def _run_locked(
             if client.get_record_status().output_active:
                 raise VrecError("An OBS recording started meanwhile. Stop it, then restart.")
 
-            _prepare_window(batch)
             try:
+                _prepare_window(batch)
                 _preflight(batch)
                 _record_batch(batch, selection)
             finally:
@@ -508,20 +512,25 @@ def _record_batch(
     for i, (url, title) in enumerate(selection, 1):
         batch.current_title = history.display_title(batch.videos_history, url, title)
         if not _enough_disk_space(batch, free_bytes):
+            batch.stopped_early = True
             break
+        batch.current_url = url
         result, had_error = _record_one_with_retry(batch, i, len(selection), url, title, record)
         batch.results.append(result)
         if not batch.test_mode:
             _record_in_history(batch, url, result)
+        batch.current_url = ""
         print(f"   -> {status_text(result)}\n")
 
         if had_error:
             error_streak += 1
             if batch.features.enabled("circuit_breaker"):
                 if _connection_lost(batch, chrome_alive, obs_alive):
+                    batch.stopped_early = True
                     break
                 if error_streak >= 3:
                     print("3 errors in a row: batch stopped.")
+                    batch.stopped_early = True
                     break
         else:
             error_streak = 0
@@ -601,31 +610,53 @@ def _handle_failed_video(batch: Batch, number: int, error: Exception) -> Recordi
     warn(f"ERROR: {first_line(error)}")
     result = RecordingResult(number=number, title=batch.current_title, reason=f"ERROR: {first_line(error)}")
     if path:
-        result.file = rename_recording(path, f"{INTERRUPTED_PREFIX} - {batch.current_title}")
+        result.file = rename_recording(path, f"{INTERRUPTED_PREFIX} - {clean_title(batch.current_title)}")
         print(f"   Interrupted recording saved as {result.file.name}")
     return result
 
 
+def _save_history(batch: Batch, url: str, title: str, status: str, detail: str, **extra: Any) -> None:
+    """history.record, but a history.json that can't be written never aborts the batch."""
+    try:
+        history.record(batch.paths.history, batch.videos_history, url, title, status, detail, **extra)
+    except OSError as e:
+        warn(
+            f"Couldn't save {batch.paths.history.name} ({first_line(e)}): "
+            "this video's status is kept in memory only."
+        )
+
+
 def _record_in_history(batch: Batch, url: str, result: RecordingResult) -> None:
     status, detail = history_status(result)
-    history.record(
-        batch.paths.history,
-        batch.videos_history,
+    _save_history(
+        batch,
         url,
         result.title or batch.current_title,
         status,
         detail,
-        result.file,
-        result.quality,
+        file=result.file,
+        quality=result.quality,
     )
 
 
 def _handle_keyboard_interrupt(batch: Batch) -> None:
-    print("\nStop requested. The current video is not counted as done.")
+    batch.interrupted = True
+    print("\nStop requested. The video in progress is marked as failed.")
     path = obs_control.stop_if_recording(batch.client)
+    file: Path | None = None
     if path and batch.current_title:
-        renamed = rename_recording(path, f"{INTERRUPTED_PREFIX} - {batch.current_title}")
-        print(f"   Interrupted recording saved as {renamed.name}")
+        file = rename_recording(path, f"{INTERRUPTED_PREFIX} - {clean_title(batch.current_title)}")
+        print(f"   Interrupted recording saved as {file.name}")
+    if batch.current_url and not batch.test_mode:
+        _save_history(
+            batch,
+            batch.current_url,
+            batch.current_title,
+            history.STATUS_FAILED,
+            "interrupted",
+            file=file,
+        )
+    batch.current_url = ""
 
 
 def _cleanup_audio(batch: Batch) -> None:
@@ -637,8 +668,9 @@ def _cleanup_audio(batch: Batch) -> None:
 
 
 def _final_report(batch: Batch, send: Callable[[str, str], bool] = notify.notify) -> int:
+    code = exit_code(batch)
     if not batch.results:
-        return 0
+        return code
     elapsed = time.time() - batch.started_at
     if batch.test_mode:
         _print_diagnostic(batch.results[0])
@@ -648,6 +680,17 @@ def _final_report(batch: Batch, send: Callable[[str, str], bool] = notify.notify
         title, text = "vrec: batch finished", summary_line(batch.results, elapsed)
     if batch.features.enabled("notify_when_done"):
         send(title, text)
+    return code
+
+
+def exit_code(batch: Batch) -> int:
+    """0: all OK (or nothing to do on purpose); 1: a video not OK or the batch stopped early; 130: Ctrl+C."""
+    if batch.interrupted:
+        return 130
+    if batch.test_mode and batch.results:
+        return 0 if status_text(batch.results[0]) == "OK" else 1
+    if batch.stopped_early or any(status_text(r) != "OK" for r in batch.results):
+        return 1
     return 0
 
 

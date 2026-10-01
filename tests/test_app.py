@@ -289,7 +289,7 @@ def test_keyboard_interrupt_stops_obs_renames_and_restores_mutes(tmp_path: Path)
         app._cleanup_audio(batch)
 
     assert client.stopped
-    assert url_key("https://x/1") not in batch.videos_history
+    assert batch.videos_history[url_key("https://x/1")]["detail"] == "interrupted"
     assert not batch.results
     assert client.mutes_restored == {"Mic": False}
 
