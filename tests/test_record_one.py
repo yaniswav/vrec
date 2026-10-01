@@ -194,3 +194,120 @@ def test_black_check_off_reports_not_checked(tmp_path, patched):
     result, _ = run(tmp_path, FakePage(), FeatureSet({"black_check": False}))
     assert result.image_ok is None
     assert recorder.status_text(result) == "OK"
+
+
+# ---------- failure naming, tail wait and rename failure (outcome injected through watch) ----------
+
+
+class TimedPage(FakePage):
+    """Remembers every wait, to tell the tail wait from the other pauses."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.waits: list[float] = []
+
+    def wait_for_timeout(self, ms: float) -> None:
+        self.waits.append(ms)
+        super().wait_for_timeout(ms)
+
+
+def run_with_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reason: Any, tail_s: float = 0
+) -> tuple[Any, FakeObs, TimedPage]:
+    from vrec.monitor import WatchOutcome
+
+    monkeypatch.setattr(
+        recorder, "watch", lambda player, capture, config, output: WatchOutcome(reason=reason)
+    )
+    page = TimedPage()
+    client = FakeObs(tmp_path / "2026-09-27 10-00-00.mkv")
+    result = recorder.record_one(
+        page,  # type: ignore[arg-type]
+        client,  # type: ignore[arg-type]
+        None,
+        "Scene",
+        Settings(lead_in_s=0, tail_s=tail_s, fullscreen_settle_s=0),
+        FeatureSet(),
+        1,
+        1,
+        "https://example.com/videos/1",
+        "My Video",
+        False,
+    )
+    return result, client, page
+
+
+def test_black_image_is_named_failed_black(tmp_path, patched, monkeypatch):
+    from vrec.monitor import StopReason
+
+    result, _, _ = run_with_outcome(tmp_path, monkeypatch, StopReason.BLACK)
+    assert result.file == tmp_path / "FAILED black image - My Video.mkv"
+    assert result.file.exists()
+    assert result.reason == "black image"
+
+
+@pytest.mark.parametrize("name", ["STALLED", "VIDEO_GONE", "TOO_LONG", "OBS_LOST"])
+def test_incomplete_reasons_are_named_incomplete(tmp_path, patched, monkeypatch, name):
+    from vrec.monitor import StopReason
+
+    result, _, _ = run_with_outcome(tmp_path, monkeypatch, StopReason[name])
+    assert result.file == tmp_path / "INCOMPLETE - My Video.mkv"
+    assert result.file.exists()
+
+
+@pytest.mark.parametrize("name", ["ENDED", "TIME_LIMIT"])
+def test_other_reasons_keep_the_plain_title(tmp_path, patched, monkeypatch, name):
+    from vrec.monitor import StopReason
+
+    result, _, _ = run_with_outcome(tmp_path, monkeypatch, StopReason[name])
+    assert result.file == tmp_path / "My Video.mkv"
+
+
+@pytest.mark.parametrize("name", ["BLACK", "STALLED", "OBS_LOST"])
+def test_no_tail_wait_when_the_recording_is_already_lost(tmp_path, patched, monkeypatch, name):
+    from vrec.monitor import StopReason
+
+    _, _, page = run_with_outcome(tmp_path, monkeypatch, StopReason[name], tail_s=7)
+    assert 7000 not in page.waits
+
+
+@pytest.mark.parametrize("name", ["ENDED", "VIDEO_GONE", "TOO_LONG", "TIME_LIMIT"])
+def test_tail_wait_for_the_other_reasons(tmp_path, patched, monkeypatch, name):
+    from vrec.monitor import StopReason
+
+    _, _, page = run_with_outcome(tmp_path, monkeypatch, StopReason[name], tail_s=7)
+    assert page.waits[-1] == 7000
+
+
+def test_rename_failure_warns_and_keeps_the_obs_name(tmp_path, patched, monkeypatch, capsys):
+    from vrec.monitor import StopReason
+
+    monkeypatch.setattr(recorder, "rename_recording", lambda path, stem: Path(path))
+    result, _, _ = run_with_outcome(tmp_path, monkeypatch, StopReason.ENDED)
+    assert result.file == tmp_path / "2026-09-27 10-00-00.mkv"
+    assert "Couldn't rename the recording, it keeps its OBS name: 2026-09-27 10-00-00.mkv" in (
+        capsys.readouterr().out
+    )
+
+
+def test_obs_lost_when_stop_fails_raises_a_clear_error(tmp_path, patched, monkeypatch):
+    from vrec.errors import VrecError
+    from vrec.monitor import StopReason
+
+    def boom(self: FakeObs) -> None:
+        raise RuntimeError("socket closed")
+
+    monkeypatch.setattr(FakeObs, "stop_record", boom)
+    with pytest.raises(VrecError, match="OBS stopped recording during the video"):
+        run_with_outcome(tmp_path, monkeypatch, StopReason.OBS_LOST)
+
+
+def test_stop_failure_for_another_reason_is_not_masked(tmp_path, patched, monkeypatch):
+    from vrec.monitor import StopReason
+
+    def boom(self: FakeObs) -> None:
+        raise RuntimeError("socket closed")
+
+    monkeypatch.setattr(FakeObs, "stop_record", boom)
+    with pytest.raises(RuntimeError, match="socket closed"):
+        run_with_outcome(tmp_path, monkeypatch, StopReason.ENDED)
