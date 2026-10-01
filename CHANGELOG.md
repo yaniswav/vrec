@@ -69,6 +69,21 @@ Initial public release.
   batch summary with a totals line (OK count, video length, size, time taken).
 - Per-run log files in `data/logs` (feature `run_logs`), with the OBS password masked and the last 20
   files kept.
+- Exit codes: `0` when every video is OK or there was nothing to record, `1` when a video is not OK or
+  the batch stopped early, `130` after Ctrl+C. Ctrl+C marks the video in progress as failed
+  ("interrupted") and names its file `INTERRUPTED - <title>`.
+- The OBS WebSocket password prompt is hidden, and a run with no keyboard and no saved password fails
+  with a clear message instead of hanging (`VREC_OBS_PASSWORD` is the alternative). "OBS refused the
+  connection" only appears for a real authentication failure.
+- "OBS stopped recording" stop reason: if OBS stops recording during a video, the video ends as
+  incomplete and failed instead of waiting for a recording that is gone.
+- A `history.json` with an unknown version or that isn't a JSON object is set aside as
+  `history.unreadable.json`, and a failed save only warns instead of stopping the batch.
+- Safer file names (Windows device names, control characters) and duplicate detection that ignores
+  tracking parameters but keeps other query parameters, so `?v=A` and `?v=B` stay separate videos.
+- The virtual display helper lives in `%ProgramData%\vrec`, writable only by Administrators and
+  SYSTEM, and accepts only a restricted adapter pattern.
+- `SHA256SUMS.txt` with each release, and a hidden `--selftest` that checks the packaged exe.
 - Single-instance lock to prevent two runs from colliding on the same data directory.
 - Command-line interface (`vrec`) with a test mode, configurable data directory and config file, and
   Windows launcher scripts (`install.bat`, `start.bat`, `test.bat`, `launch_chrome.bat`).

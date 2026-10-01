@@ -1,6 +1,9 @@
 # One video link per line.
 #
 # Lines starting with "#" are ignored, and so are duplicate links.
+# Duplicates ignore tracking parameters (utm_*, fbclid, gclid, ref, ref_src, si, feature), a
+# trailing slash and a #fragment. Links that differ in any other query parameter, such as
+# ?v=A and ?v=B, are different videos.
 #
 # Two formats are supported, and can be mixed freely:
 #

@@ -71,7 +71,7 @@ Checking everything before recording...
   otherwise) and leaves it open afterwards.
 - **Audio** is sent through **VB-CABLE**, a virtual audio cable, so OBS can capture the video's sound
   without playing it on your speakers. By default (feature `audio_sink`) vrec routes only the recorded
-  page's own sound there itself, using a brief, automatically-revoked microphone permission to look up
+  page's own sound there itself, using a brief microphone permission, reset to "ask" afterwards, to look up
   the output device by name (it never actually reads or uses the microphone); routing Chrome through
   the Windows volume mixer, as described in
   [setup-windows.md](docs/setup-windows.md#2-vb-cable-virtual-audio-cable), is then just a fallback.
@@ -103,7 +103,7 @@ Checking everything before recording...
   show them; if vrec's own display capture is filming another screen, vrec tries the other screens OBS
   offers it and keeps the one that works); and sound reaches OBS (a 1 s 440 Hz tone sent to CABLE Input
   must move OBS's meter, normally inaudible since it's routed to the cable rather than played out
-  loud). It briefly uses the same automatically-revoked microphone permission as `audio_sink` does, for
+  loud). It briefly uses the same microphone permission as `audio_sink` does (reset to "ask" afterwards), for
   the same reason: finding the right audio output by name. Results print as `[ OK ]`/`[FAIL]`/`[SKIP]`
   lines; on failure, the menu asks "Record anyway? (y/N)", while `--all`/`--only` stop before recording
   anything.
@@ -132,11 +132,25 @@ Checking everything before recording...
 4. Double-click `launch_chrome.bat`, log in to the site if needed, then double-click `test.bat`.
    `doctor.bat` checks your setup and `start.bat` records your list.
 
+The zip also holds the `docs` folder, so the links to the setup guides work offline. To check that a
+download is intact, download `SHA256SUMS.txt` from the same release, then in PowerShell:
+
+```powershell
+Get-FileHash .\vrec-<version>-windows.zip -Algorithm SHA256
+```
+
+The hash printed must match the line for that zip in `SHA256SUMS.txt`. If vrec.exe says "This
+download looks incomplete or corrupted. Download the zip again and re-extract it.", download the zip
+again and unzip it into a fresh folder.
+
 ### With Python
 
 1. Follow the one-time setup: [docs/setup-windows.md](docs/setup-windows.md).
 2. Run `scripts\windows\install.bat` to install vrec and its dependencies.
 3. Put your links in `data\videos.txt` (see [videos.example.txt](videos.example.txt) for the format).
+   A link listed twice is recorded once. Duplicates ignore tracking parameters (`utm_*`, `fbclid`,
+   `gclid`, `ref`, `ref_src`, `si`, `feature`); links that differ in any other query parameter (for
+   example `?v=`) are different videos.
 4. Run `vrec --doctor` to check that OBS, Chrome, VB-CABLE and disk space are all ready. Fix anything
    it reports as `[FAIL]` before continuing.
 5. Run `scripts\windows\test.bat` for a quick 30-second test and diagnostic.
@@ -170,7 +184,8 @@ bumping a few videos to the front of the queue. Option 5 opens the same list as
 
 Press **Ctrl+C** at any point to stop. The current recording is stopped cleanly, OBS audio settings
 are restored, and the Chrome window is put back the way it was. Videos already finished stay marked
-as done; the one that was in progress is renamed `INTERRUPTED - <title>` and marked as failed.
+as done; the one that was in progress is marked as failed in the history (detail "interrupted"), and
+its file is renamed `INTERRUPTED - <title>`. vrec exits with code 130.
 
 ### Non-interactive runs
 
@@ -194,8 +209,34 @@ vrec --schedule status
 `--schedule on` registers a Windows Task Scheduler task that runs `vrec --all` unattended, every day
 at `HH:MM` by default, or only on the given days with `--days`. `--schedule off` removes it, and
 `--schedule status` reports whether it's registered, its next run time, and the result of its last
-run. OBS and the recording Chrome window (`launch_chrome.bat`) must already be open at that time, and
-the PC must be awake: the scheduled task doesn't start them for you.
+run. vrec starts OBS and the recording Chrome itself (features `auto_start_obs` and
+`auto_start_chrome`, on by default). What has to be true at that time:
+
+- The PC is awake and you are logged in to Windows. The task only runs while you are logged on.
+- The OBS WebSocket password is saved (run vrec once by hand), or `VREC_OBS_PASSWORD` is set. A run
+  with no saved password can't ask for it, so it fails with "No OBS WebSocket password saved. Run vrec
+  once by hand to save it, or set VREC_OBS_PASSWORD."
+- The recording Chrome profile is logged in to the site (use `launch_chrome.bat` once).
+
+The task's last result is the exit code of `vrec --all` (see [Exit codes](#exit-codes)): `0` means
+every video was recorded fine, anything else means a video needs a look or the batch stopped early.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Every video is OK, or there was nothing to record |
+| `1` | At least one video is not OK (`CHECK`, `FAILED` or `ERROR`), or the batch stopped early |
+| `130` | Stopped with Ctrl+C |
+
+### The OBS password
+
+The first time, vrec asks for the OBS WebSocket password (**Tools > WebSocket Server Settings > Show
+Connect Info** in OBS). What you type is hidden, and the prompt is not written to the run log. The
+password is saved in plain text in `data\obs_password.txt`; set `VREC_OBS_PASSWORD` instead if you
+don't want a file. If OBS rejects it, vrec says so, deletes the saved file and asks again on the next
+run. A run with no keyboard (`--all` from a scheduled task, for instance) can't ask: it fails with
+"No OBS WebSocket password saved. Run vrec once by hand to save it, or set VREC_OBS_PASSWORD."
 
 ### Diagnosing your setup: `vrec --doctor`
 
@@ -259,14 +300,14 @@ is optional; a missing file or key falls back to the default shown below.
 | `[recording]` | `max_wall_factor` | `3` | Wall-clock safety cap: give up on a video after roughly (duration x this factor) seconds. |
 | `[recording]` | `max_wall_extra` | `600` | Extra seconds added on top of that cap (also used when the duration is unknown). |
 | `[recording]` | `min_free_gb` | `5` | Free space (GB) the OBS recording folder must have before each video (feature `disk_space_guard`). |
-| `[checks]` | `black_level` | `20` | Maximum average brightness (0-255) below which a frame is considered black. |
+| `[checks]` | `black_level` | `20` | A frame is considered black when its brightest pixel (0-255) is below this level. |
 | `[checks]` | `abort_if_black_after` | `60` | Give up on a video that stays black for this many seconds. |
 | `[checks]` | `audio_level` | `0.003` | Minimum audio level to consider that there is sound (roughly -50 dB). |
 | `[buffering]` | `pause_below` | `2` | Seconds of buffered video below which playback and recording pause. |
 | `[buffering]` | `resume_at` | `10` | Seconds of buffered video required before playback and recording resume. |
 | `[buffering]` | `max_stall` | `300` | Give up on a video whose loading stays stalled for this many seconds. |
 | `[quality]` | `max_height` | `0` | Highest video height (px) vrec asks the player for; `0` = no cap, always the best. |
-| `[display]` | `screen` | `auto` | Screen the recording Chrome window is moved to (feature `auto_place_window`). `auto` = the largest screen that isn't your main one; or a number (`2`) or a name (`DISPLAY3`). See [docs/virtual-display.md](docs/virtual-display.md). |
+| `[display]` | `screen` | `auto` | Screen the recording Chrome window is moved to (feature `auto_place_window`). `auto` = the largest screen that isn't your main one, or your main screen if it is the only one; or a number (`2`) or a name (`DISPLAY3`). See [docs/virtual-display.md](docs/virtual-display.md). |
 | `[audio]` | `output` | `CABLE Input` | Audio output that receives the recorded video's sound (feature `audio_sink`). Any part of the device name works. |
 
 Environment variables:
@@ -274,7 +315,7 @@ Environment variables:
 | Variable | Purpose |
 |---|---|
 | `VREC_DATA_DIR` | Overrides the data directory (default `./data`) |
-| `VREC_OBS_PASSWORD` | OBS WebSocket password, skips the password file/prompt |
+| `VREC_OBS_PASSWORD` | OBS WebSocket password, skips the password file/prompt. Needed for scheduled runs if you never saved the password by hand |
 | `VREC_CHROME_PROFILE` | Chrome profile directory vrec starts the recording Chrome with, including via `launch_chrome.bat` (`vrec --launch-chrome`), when `[chrome] profile` isn't set in `config.toml` (default `%LOCALAPPDATA%\vrec\chrome-profile`) |
 
 ## Features on/off
@@ -320,8 +361,11 @@ Recordings are written to your OBS recording folder. File name prefixes:
 | `<title> (2).mp4` | Re-recorded; the previous file is never overwritten |
 | `TEST - <title>` | Produced by `--test` mode |
 | `FAILED black image - <title>` | Image stayed black for too long, recording abandoned (likely DRM-protected) |
-| `INCOMPLETE - <title>` | Loading stalled (even after the automatic retry), the video was removed from the page, or the wall-clock cap was hit |
+| `INCOMPLETE - <title>` | Loading stalled (even after the automatic retry), the video was removed from the page, the wall-clock cap was hit, or OBS stopped recording |
 | `INTERRUPTED - <title>` | Recording was cut short by Ctrl+C or an error |
+
+File names are cleaned up: characters Windows doesn't allow and control characters are removed, and a
+name Windows reserves for devices (`CON`, `NUL`, `COM1`...) gets a `_` after the base name.
 
 End-of-run status shown in the menu and summary:
 
@@ -330,7 +374,7 @@ End-of-run status shown in the menu and summary:
 | `OK` (-> DONE) | Everything went fine |
 | `CHECK: ...` (-> REVIEW) | Recorded, but something needs a look: black image?, no audio, and/or the time limit was reached before the end was detected. Not retried automatically. |
 | `FAILED: black image (protected video?)` (-> FAILED) | Image stayed black the whole time (probably a protected video) |
-| `FAILED: incomplete (...)` (-> FAILED) | Loading stalled, the video was removed from the page, or it took too long overall |
+| `FAILED: incomplete (...)` (-> FAILED) | Loading stalled, the video was removed from the page, it took too long overall, or OBS stopped recording |
 | `ERROR: ...` (-> FAILED) | A problem occurred on the page; the message explains what |
 
 `FAILED` results (of any kind above) are retried by "Record everything". A stalled load also gets one
@@ -359,7 +403,7 @@ src/vrec/            application source
   history.py, naming.py, playlist.py, config.py, console.py, menu.py  supporting modules
   js/                    JS snippets injected into the recorded page
 scripts/windows/    install.bat, start.bat, test.bat, launch_chrome.bat
-docs/                setup, virtual display, troubleshooting
+docs/                setup, virtual display, troubleshooting (also in the Windows zip)
 config.example.toml  documented settings template
 videos.example.txt   videos.txt format reference
 ```

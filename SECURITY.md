@@ -38,10 +38,31 @@ elevated at run time. Those tasks only run `Enable-PnpDevice`/`Disable-PnpDevice
 adapter(s) matching the pattern given at install time, nothing else, and only when triggered by
 `schtasks /Run` (no network trigger, no schedule of their own).
 
-The `audio_sink` feature grants the recorded page a temporary microphone permission (revoked again
-immediately after) so it can read the list of audio output device names and find "CABLE Input" by
+The script the tasks run lives in `%ProgramData%\vrec`. The install step (which already runs as
+administrator) removes inherited permissions on that folder and gives Administrators and SYSTEM full
+control and Users read-and-run only, so a standard process can't edit a script that later runs with
+elevated rights. The install pattern is limited to letters, digits, spaces and `* ? . ( ) - [ ]`, so it
+can't carry quotes or other characters that could break out of the script's string. Copies left in
+`%LOCALAPPDATA%\vrec` by earlier betas, which a standard process could write to, are deleted when you
+install or uninstall the helper. An administrator can still change the script, as with any elevated
+task.
+
+The `audio_sink` feature grants the recorded page a temporary microphone permission (reset to "ask"
+again immediately after, not left granted) so it can read the list of audio output device names and find "CABLE Input" by
 name; it is used only to enumerate device labels through `setSinkId`, never to capture or transmit
 microphone audio.
+
+### The OBS WebSocket password
+
+vrec stores the OBS WebSocket password in plain text in `data\obs_password.txt`, protected only by the
+file permissions of your data folder. If you'd rather not keep it on disk, set the `VREC_OBS_PASSWORD`
+environment variable instead (it is read first, and no file is written). The password prompt hides what
+you type and is not written to the run logs.
+
+### Release downloads
+
+Each release has a `SHA256SUMS.txt` next to the zip. Compare it with `Get-FileHash <zip>` in PowerShell
+before you run `vrec.exe`; see "Without Python" in the [README](README.md#without-python).
 
 ### Run logs
 

@@ -58,7 +58,7 @@ max_wall_extra = 600
 min_free_gb = 5
 
 [checks]
-# Maximum average brightness (0-255) below which a frame is considered "black".
+# A frame is considered "black" when its brightest pixel (0-255) is below this level.
 black_level = 20
 # Give up on a video that stays black for this many seconds.
 abort_if_black_after = 60
@@ -82,7 +82,8 @@ max_height = 0
 
 [display]
 # Screen the recording Chrome window is moved to (feature auto_place_window).
-# "auto" = the largest screen that isn't your main one; or a number ("2") or a name ("DISPLAY3").
+# "auto" = the largest screen that isn't your main one, or your main screen if it is the only one;
+# or a number ("2") or a name ("DISPLAY3").
 screen = "auto"
 
 [audio]

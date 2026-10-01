@@ -203,9 +203,30 @@ start_timeout` seconds (30 by default). Try `launch_chrome.bat` yourself and che
 
 ### "OBS refused the connection: the password is probably wrong. Restart, it will be asked again."
 
-Run vrec again: it will ask for the password again. The password is cached in
-`data\obs_password.txt`; deleting that file also forces the question again. You can find the correct
-password in OBS under **Tools > WebSocket Server Settings > Show Connect Info**.
+OBS closed the connection with an authentication failure, so the password is wrong. vrec deletes the
+saved password (unless it came from `VREC_OBS_PASSWORD`), and the next run asks for it again. You can
+find the correct password in OBS under **Tools > WebSocket Server Settings > Show Connect Info**.
+
+Only a real authentication failure shows this message. If OBS is slow to answer (still starting, busy),
+vrec shows "Can't reach OBS: open OBS and enable the WebSocket server (Tools > WebSocket Server
+Settings)." instead and keeps the saved password.
+
+### The OBS password prompt
+
+The first time, vrec asks "Paste the WebSocket server password here (hidden): ". What you type is not
+shown, and the prompt is not written to the run log. The password is then saved in plain text in
+`data\obs_password.txt`; deleting that file makes vrec ask again.
+
+### "No OBS WebSocket password saved. Run vrec once by hand to save it, or set VREC_OBS_PASSWORD."
+
+vrec needs the password but has no saved one and no keyboard to ask on (a scheduled run, or input
+redirected from a file). Run `vrec` once by hand in a normal terminal and type the password, or set the
+`VREC_OBS_PASSWORD` environment variable.
+
+### "Couldn't stop the OBS recording: ... Stop it in OBS."
+
+At the end of a run, or on Ctrl+C, vrec tried to stop the OBS recording and OBS didn't confirm it. The
+recording may still be running: stop it in OBS yourself, then check the OBS recordings folder.
 
 ### "Another vrec window is already running. Close it first (lock file: ...)."
 
@@ -407,21 +428,33 @@ current, valid names.
 ## Scheduled runs
 
 `vrec --schedule status` prints "No scheduled run." if none is registered, otherwise its next run time
-and the result of its last run (`0` means success). Remember: OBS and the recording Chrome window
-(`launch_chrome.bat`) must already be open, and the PC awake, at the scheduled time. The scheduled
-task runs `vrec --all`; it doesn't open them for you.
+and the result of its last run. That result is the exit code of `vrec --all`: `0` means every video
+was OK or there was nothing to record, `1` means a video was not OK or the batch stopped early, and
+`130` means Ctrl+C.
+
+vrec starts OBS and the recording Chrome itself (features `auto_start_obs` and `auto_start_chrome`), so
+they don't need to be open. At the scheduled time:
+
+- The PC must be awake and you must be logged in to Windows. The task runs only while you are logged
+  on.
+- The OBS password must be saved (run vrec once by hand) or `VREC_OBS_PASSWORD` set. Otherwise the run
+  fails with "No OBS WebSocket password saved. Run vrec once by hand to save it, or set
+  VREC_OBS_PASSWORD."
+- The recording Chrome profile must be logged in to the site (log in once with `launch_chrome.bat`).
 
 ## Output files
 
 ### `INCOMPLETE - <title>`
 
 Loading stalled for too long even after the automatic retry, the video was removed from the page
-mid-recording, or the wall-clock safety cap was hit. The video is marked as failed so it comes back up
-under "Record everything".
+mid-recording, the wall-clock safety cap was hit, or OBS stopped recording by itself. The video is
+marked as failed so it comes back up under "Record everything".
 
 ### `INTERRUPTED - <title>`
 
 The recording was cut short by Ctrl+C or by an unexpected error partway through. Also marked as failed.
+After Ctrl+C, vrec prints "Stop requested. The video in progress is marked as failed." and the history
+entry has the detail "interrupted". vrec then exits with code 130.
 
 ### `FAILED black image - <title>`
 
@@ -445,11 +478,51 @@ suffix.
 | `FAILED: incomplete (loading stalled)` | Stayed stalled for too long, even after the automatic lower-quality retry. |
 | `FAILED: incomplete (video removed from page)` | The video disappeared from the page mid-recording. |
 | `FAILED: incomplete (took too long)` | The wall-clock safety cap (`[recording] max_wall_factor` x duration + `max_wall_extra`) was hit. |
+| `FAILED: incomplete (OBS stopped recording)` | OBS stopped recording during the video. vrec checks every 30 seconds. See [OBS stopped recording](#obs-stopped-recording). |
 | `ERROR: ...` | A problem occurred on the page; the message explains what. |
 
 Several `CHECK` reasons can combine on the same result, e.g. `CHECK: black image?, no audio`. `CHECK`
 results are not retried automatically (they need a look first); every `FAILED` result above is retried
 by "Record everything".
+
+## OBS stopped recording
+
+While a video plays, vrec asks OBS every 30 seconds whether it is still recording. If OBS says no (you
+stopped it, OBS crashed or ran out of disk), or can't be asked twice in a row, vrec ends the video with
+`FAILED: incomplete (OBS stopped recording)`, and the file, if OBS kept one, is named `INCOMPLETE -
+<title>`. If OBS also refuses the final stop request, vrec shows "OBS stopped recording during the
+video. Check the OBS recordings folder." Check OBS and run "Record everything" again.
+
+## history.json problems
+
+### "history.json was unreadable: set aside as history.unreadable.json."
+
+`data\history.json` isn't valid JSON, isn't a JSON object, or has a `version` this vrec doesn't know
+(for example it was written by a newer vrec). vrec never overwrites such a file: it renames it to
+`history.unreadable.json` and starts with an empty history, so every video shows as `NEW`. Your
+recordings are untouched. Copy anything you need from the old file, or put it back (and use the vrec
+version that wrote it).
+
+### "Couldn't save history.json (...): this video's status is kept in memory only."
+
+vrec couldn't write the history file (a locked file, a full disk, no permission). It retries a few
+times first. The batch goes on, but this video's status is lost when vrec exits, so it may be recorded
+again next time. Fix the cause (close whatever holds `data\history.json`, free space) before the next
+run.
+
+## File names
+
+vrec names each recording after the video's title. It removes characters Windows doesn't allow
+(`\ / : * ? " < > |`), control characters and zero-width characters, cuts the name to 100 characters,
+and adds a `_` to a name Windows reserves for devices (`CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`,
+`LPT1` to `LPT9`), so a video titled `CON` is saved as `CON_.mp4`.
+
+## Duplicate links in videos.txt
+
+A link listed twice is recorded once. Two links count as the same video when they differ only by
+tracking parameters (`utm_*`, `fbclid`, `gclid`, `ref`, `ref_src`, `si`, `feature`), a trailing slash,
+a `#fragment`, or the case of the scheme and host. Links that differ in any other query parameter (for
+example `watch?v=A` and `watch?v=B`) are different videos.
 
 ## The vrec window seems frozen
 

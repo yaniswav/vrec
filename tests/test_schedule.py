@@ -143,7 +143,8 @@ def test_schedule_on_returns_summary_with_reminder(_local_appdata: Path) -> None
     message = schedule.schedule_on("07:05", None, Path("data"), None, runner=runner)
     assert "07:05" in message
     assert "every day" in message
-    assert "OBS and the recording Chrome" in message
+    assert "logged in to Windows" in message
+    assert "VREC_OBS_PASSWORD" in message
     assert "PC must be awake" in message
 
 

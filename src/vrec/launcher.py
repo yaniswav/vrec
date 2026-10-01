@@ -210,7 +210,7 @@ def ensure_obs(
 
 
 def _chrome_standard_paths() -> list[Path]:
-    """The same 3 locations scripts/windows/launch_chrome.bat tries, in the same order."""
+    """The standard chrome.exe install locations, in the order they are tried."""
     program_files = os.environ.get("PROGRAMFILES", r"C:\Program Files")
     program_files_x86 = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
     paths = [
@@ -243,7 +243,7 @@ def find_chrome(settings: Settings, read_registry: RegistryReader = _read_regist
 def chrome_profile_dir(settings: Settings) -> Path:
     """The Chrome profile directory: `[chrome] profile`, else `VREC_CHROME_PROFILE`, else the default.
 
-    Resolved the same way as scripts/windows/launch_chrome.bat, so both use the same profile.
+    launch_chrome.bat just runs `vrec --launch-chrome`, so both use this same profile.
     """
     if settings.chrome_profile:
         return Path(settings.chrome_profile)
@@ -273,7 +273,7 @@ CHROME_QUIET_FLAGS = ("--no-first-run", "--no-default-browser-check", "--disable
 
 
 def start_chrome(exe: Path, port: int, profile: Path, popen: PopenFn = subprocess.Popen) -> None:
-    """Start the recording Chrome, detached, with the same flags as launch_chrome.bat."""
+    """Start the recording Chrome, detached. `vrec --launch-chrome` (launch_chrome.bat) uses this too."""
     popen(
         [
             str(exe),

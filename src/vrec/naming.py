@@ -17,11 +17,11 @@ _RESERVED_NAMES = frozenset(
     {"CON", "PRN", "AUX", "NUL"} | {f"COM{n}" for n in range(1, 10)} | {f"LPT{n}" for n in range(1, 10)}
 )
 
-# File name prefixes used by recorder.record_one().
+# File name prefixes used by recorder.record_one() and app.py.
 TEST_PREFIX = "TEST"
 FAILED_BLACK_PREFIX = "FAILED black image"
 INCOMPLETE_PREFIX = "INCOMPLETE"
-INTERRUPTED_PREFIX = "INTERRUPTED"  # recordings cut short by Ctrl+C or an error (lot 4)
+INTERRUPTED_PREFIX = "INTERRUPTED"  # recordings cut short by Ctrl+C or an error
 
 # Legacy (French) failure marker used by recordings made before this rewrite.
 _LEGACY_FAILED_MARKER = "ECHEC"

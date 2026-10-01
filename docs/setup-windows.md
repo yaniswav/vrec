@@ -27,7 +27,7 @@ VB-CABLE lets OBS capture the video's audio without it ever reaching your speake
 
 By default, vrec sends only the recorded video's own sound to VB-CABLE's playback side ("CABLE
 Input") itself, for each video (feature `audio_sink`), using a brief microphone permission it grants
-itself on the page and revokes right after. It only needs that permission to look up the audio
+itself on the page and resets to "ask" right after. It only needs that permission to look up the audio
 output device by name; it never actually reads or uses the microphone. With this on (the default),
 you shouldn't need to touch the Windows volume mixer at all.
 

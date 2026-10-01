@@ -29,9 +29,9 @@ occupy physical space and stays visibly on.
 
 ## Option 4: No second screen
 
-vrec also works with a single display: the recording window will simply occupy your main screen while
-it runs, so you can't use the PC for anything else at the same time. Fine for short unattended runs
-overnight.
+vrec also works with a single display: with `[display] screen = "auto"` (the default), vrec uses your
+only screen, so no setting is needed. The recording window then occupies that screen while it runs, so
+you can't use the PC for anything else at the same time. Fine for short unattended runs overnight.
 
 ## Display settings
 
@@ -76,7 +76,7 @@ it may not contain the word "Virtual" depending on the driver.
 ## Choosing the right screen
 
 By default, `[display] screen = "auto"` in `config.toml` picks the largest screen that isn't your main
-one. If you also have a **real second monitor** connected, "auto" can pick that monitor instead of the
+one, or your main screen when it is the only one. If you also have a **real second monitor** connected, "auto" can pick that monitor instead of the
 virtual display whenever the virtual display happens to be off (for example, right before
 `manage_virtual_display` turns it on). vrec doesn't guess which one you meant from the screen list
 alone. If you have both:
@@ -104,10 +104,18 @@ around each batch, through the `manage_virtual_display` feature (off by default,
    vrec --install-display-helper "*Virtual Display Driver*"
    ```
 
-   This writes a small PowerShell script and registers two on-demand Windows Task Scheduler tasks
-   (under `\vrec\`) that run with the highest privileges to enable/disable the matching adapter(s).
-   This is the only step that needs administrator rights. vrec triggers those tasks afterwards
-   (`schtasks /Run`) with no elevation prompt.
+   The pattern may only contain letters, digits, spaces and these characters: `* ? . ( ) - [ ]`.
+   Anything else is refused.
+
+   This writes a small PowerShell script to `%ProgramData%\vrec` and registers two on-demand Windows
+   Task Scheduler tasks (under `\vrec\`) that run it with the highest privileges to enable/disable the
+   matching adapter(s). This is the only step that needs administrator rights. vrec triggers those
+   tasks afterwards (`schtasks /Run`) with no elevation prompt.
+
+   Because the tasks run elevated, the script must not be editable by a standard user. vrec locks the
+   `%ProgramData%\vrec` folder so that only Administrators and SYSTEM can write to it; other users can
+   read it. Earlier betas kept the script in `%LOCALAPPDATA%\vrec`, where any process of yours could
+   change it: installing or uninstalling the helper now deletes those old copies.
 
 2. Turn the feature on:
 
@@ -121,7 +129,7 @@ it as it found it. It tells the virtual display apart from a real second monitor
 that adapter's own status, not by guessing from the screen list (see
 [Choosing the right screen](#choosing-the-right-screen) above).
 
-To remove the scheduled tasks and the helper script:
+To remove the scheduled tasks and the helper script (also the old `%LOCALAPPDATA%\vrec` copies):
 
 ```
 vrec --uninstall-display-helper

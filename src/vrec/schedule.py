@@ -165,8 +165,10 @@ def schedule_on(
     return (
         f"Scheduled: vrec will run unattended {when}.\n"
         f"It will run: {command}\n"
-        "Reminder: OBS and the recording Chrome (launch_chrome.bat) must be open at that "
-        "time; the PC must be awake."
+        "Reminder: at that time the PC must be awake and you must be logged in to Windows. "
+        "vrec starts OBS and Chrome itself, but it needs the OBS password saved "
+        "(run vrec once by hand) or VREC_OBS_PASSWORD set, and the recording Chrome "
+        "profile logged in to the site."
     )
 
 

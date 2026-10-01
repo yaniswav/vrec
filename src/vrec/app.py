@@ -3,8 +3,8 @@
 The batch run is split into small steps threaded through a `Batch`, so each step can be
 tested with fakes instead of a live Chrome/OBS connection: `record` and the two health
 probes (`chrome_alive`, `obs_alive`) are parameters of `_record_batch` for exactly that
-reason. `_prepare_window`/`_restore_window` are the seam where window placement and
-virtual-display handling will hook in later; for now they just keep the fullscreen logic.
+reason. `_prepare_window` moves Chrome to the virtual screen and fullscreens it before the
+pre-flight check and the recording; `_restore_window` puts the window back afterwards.
 """
 
 from __future__ import annotations
