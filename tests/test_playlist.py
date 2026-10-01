@@ -66,8 +66,7 @@ def test_different_video_ids_are_two_entries(tmp_path: Path) -> None:
 def test_dedup_by_host_case(tmp_path: Path) -> None:
     path = tmp_path / "videos.txt"
     path.write_text(
-        "https://Example.com/A
-https://EXAMPLE.com/A\n",
+        "https://Example.com/A\nhttps://EXAMPLE.com/A\n",
         encoding="utf-8",
     )
     videos = read_playlist(path)
