@@ -15,6 +15,7 @@ from vrec import history
 from vrec.browser import document_script, load_js, route_audio_to
 from vrec.config import Settings
 from vrec.console import ProgressLine, human_duration, warn
+from vrec.errors import VrecError
 from vrec.features import FeatureSet
 from vrec.monitor import Output, PlayerState, StopReason, WatchConfig, watch
 from vrec.naming import FAILED_BLACK_PREFIX, INCOMPLETE_PREFIX, TEST_PREFIX, clean_title, rename_recording
@@ -36,7 +37,9 @@ _JS_GET_FORCED_QUALITY = "() => window.__vrecForcedQuality || null"
 
 # Reasons that mean the recording is missing part of the video, not just unverified:
 # never fully recorded, so it should be retried rather than merely reviewed.
-INCOMPLETE_REASONS = frozenset({StopReason.STALLED, StopReason.VIDEO_GONE, StopReason.TOO_LONG})
+INCOMPLETE_REASONS = frozenset(
+    {StopReason.STALLED, StopReason.VIDEO_GONE, StopReason.TOO_LONG, StopReason.OBS_LOST}
+)
 
 
 @dataclass
@@ -94,6 +97,12 @@ class _ObsCapture:
 
     def audio_peak(self) -> float | None:
         return self._meter.peak if self._meter else None
+
+    def recording(self) -> bool | None:
+        try:
+            return bool(self._client.get_record_status().output_active)
+        except Exception:
+            return None
 
 
 def record_one(
@@ -204,9 +213,14 @@ def record_one(
 
     if result.buffering_pauses:
         print(f"   {result.buffering_pauses} buffering pause(s), excluded from the recording")
-    if outcome.reason not in (StopReason.BLACK, StopReason.STALLED):
+    if outcome.reason not in (StopReason.BLACK, StopReason.STALLED, StopReason.OBS_LOST):
         page.wait_for_timeout(int(settings.tail_s * 1000))
-    path = client.stop_record().output_path
+    try:
+        path = client.stop_record().output_path
+    except Exception as e:
+        if outcome.reason != StopReason.OBS_LOST:
+            raise
+        raise VrecError("OBS stopped recording during the video. Check the OBS recordings folder.") from e
     if meter and config.audio_check:
         result.audio_ok = meter.peak >= settings.audio_level
 

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import getpass
 import io
 import json
 import logging
 import os
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -15,11 +17,12 @@ from pathlib import Path
 from typing import Any, cast
 
 import obsws_python as obs
-from obsws_python.error import OBSSDKRequestError
+from obsws_python.error import OBSSDKError, OBSSDKRequestError, OBSSDKTimeoutError
 from obsws_python.subs import Subs
 from PIL import Image
 
 from vrec.config import Paths, Settings
+from vrec.console import first_line, warn
 from vrec.errors import VrecError
 
 _AUDIO_SOURCE_KIND = "wasapi_input_capture"
@@ -50,8 +53,16 @@ def get_password(paths: Paths) -> tuple[str, bool]:
         return env, True
     if paths.password.exists():
         return paths.password.read_text(encoding="utf-8").strip(), False
+    no_password = VrecError(
+        "No OBS WebSocket password saved. Run vrec once by hand to save it, or set VREC_OBS_PASSWORD."
+    )
+    if not sys.stdin or not sys.stdin.isatty():
+        raise no_password
     print("In OBS: Tools > WebSocket Server Settings > Show Connect Info")
-    password = input("Paste the WebSocket server password here: ").strip()
+    try:
+        password = getpass.getpass("Paste the WebSocket server password here (hidden): ").strip()
+    except (EOFError, OSError) as e:
+        raise no_password from e
     paths.password.write_text(password, encoding="utf-8")
     return password, False
 
@@ -61,16 +72,18 @@ def connect(settings: Settings, paths: Paths) -> tuple[obs.ReqClient, str]:
     password, from_env = get_password(paths)
     try:
         client = obs.ReqClient(host=settings.obs_host, port=settings.obs_port, password=password, timeout=10)
-    except ConnectionRefusedError as e:
-        raise ObsUnreachable(
-            "Can't reach OBS: open OBS and enable the WebSocket server (Tools > WebSocket Server Settings)."
-        ) from e
-    except Exception as e:
+    except OBSSDKTimeoutError as e:
+        raise ObsUnreachable() from e
+    except OBSSDKError as e:
+        # A real authentication failure (OBS closed the handshake with "authentication failed").
         if not from_env:
             paths.password.unlink(missing_ok=True)
         raise VrecError(
             "OBS refused the connection: the password is probably wrong. Restart, it will be asked again."
         ) from e
+    except Exception as e:
+        # Refused, timed out, reset... OBS is probably still starting: not a password problem.
+        raise ObsUnreachable() from e
     return client, password
 
 
@@ -241,10 +254,18 @@ def is_black_frame(client: obs.ReqClient, scene: str, settings: Settings) -> boo
 
 
 def stop_if_recording(client: obs.ReqClient) -> str | None:
-    """Stop OBS recording if one is active. Returns the output path, or None."""
+    """Stop OBS recording if one is active. Returns the output path, or None.
+
+    A failure is reported as a warning: the recording may still be running in OBS.
+    """
     try:
-        if client.get_record_status().output_active:
+        try:
+            active = client.get_record_status().output_active
+        except (OBSSDKTimeoutError, TimeoutError):
+            # The timed-out reply may arrive later and desync the client: stop anyway, once.
+            active = True
+        if active:
             return cast(str, client.stop_record().output_path)
-    except Exception:
-        pass
+    except Exception as e:
+        warn(f"Couldn't stop the OBS recording: {first_line(e)}. Stop it in OBS.")
     return None
