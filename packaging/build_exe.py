@@ -53,6 +53,7 @@ def main() -> None:
 
     for filename in EXTRA_FILES:
         shutil.copy2(ROOT / filename, folder / filename)
+    shutil.copytree(ROOT / "docs", folder / "docs")
     for bat in sorted((ROOT / "packaging" / "windows").glob("*.bat")):
         shutil.copy2(bat, folder / bat.name)
 
