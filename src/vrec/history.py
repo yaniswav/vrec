@@ -10,9 +10,10 @@ import json
 import time
 from pathlib import Path
 from typing import Any, TypedDict, cast
+from urllib.parse import urlsplit
 
 from vrec.naming import find_existing_recording
-from vrec.playlist import url_key
+from vrec.playlist import legacy_url_key, url_key
 
 STATUS_DONE = "done"
 STATUS_MARKED = "marked"
@@ -83,11 +84,35 @@ def load(path: Path) -> Videos:
     if isinstance(raw, dict) and raw.get("version") == 1:
         # Our own previously-saved file (see `save()`), not externally validated, so it is trusted
         # to match the Videos shape.
-        return cast(Videos, raw.get("videos", {}))
+        videos = cast(Videos, raw.get("videos", {}))
+        if _rekey_legacy(videos):
+            save(path, videos)
+        return videos
 
     videos = _migrate_legacy(raw if isinstance(raw, dict) else {})
+    _rekey_legacy(videos)
     save(path, videos)
     return videos
+
+
+def _rekey_legacy(videos: Videos) -> bool:
+    """Move entries stored under an old-format key (see `legacy_url_key`) to the current `url_key`.
+
+    The entry's own `url` tells us what it was recorded for. Returns True if anything moved.
+    An entry already present under the new key wins.
+    """
+    changed = False
+    for key in list(videos):
+        entry = videos[key]
+        url = entry.get("url", "") if isinstance(entry, dict) else ""
+        if not url or key != legacy_url_key(url):
+            continue
+        new_key = url_key(url)
+        if new_key != key:
+            del videos[key]
+            videos.setdefault(new_key, entry)
+            changed = True
+    return changed
 
 
 def _migrate_legacy(raw: dict[str, Any]) -> Videos:
@@ -155,7 +180,7 @@ def display_title(videos: Videos, url: str, title: str | None) -> str:
     known = videos.get(url_key(url))
     if known and known.get("title"):
         return known["title"]
-    return url_key(url).rsplit("/", 1)[-1].replace("-", " ").strip() or url
+    return urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").strip() or url
 
 
 def adopt_existing_files(

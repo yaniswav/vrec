@@ -4,14 +4,36 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from vrec.naming import INVISIBLE_CHARS, clean_title
 
 _URL_RE = re.compile(r"https?://\S+")
 
 
+_TRACKING_PARAMS = frozenset({"fbclid", "gclid", "ref", "ref_src", "si", "feature"})
+
+
+def _is_tracking(param: str) -> bool:
+    name = param.split("=", 1)[0].lower()
+    return name.startswith("utm_") or name in _TRACKING_PARAMS
+
+
 def url_key(url: str) -> str:
-    """Normalize a URL so the same video is recognized regardless of query string or trailing slash."""
+    """Normalize a URL so the same video is recognized across share-link noise.
+
+    Scheme and host are lowercased, the path keeps its case, the fragment and a trailing slash are
+    dropped, and the query keeps its parameters (so `watch?v=A` and `watch?v=B` stay distinct)
+    except tracking ones (utm_*, fbclid, gclid, ref, ref_src, si, feature), sorted for stability.
+    """
+    parts = urlsplit(url.strip())
+    params = sorted(p for p in parts.query.split("&") if p and not _is_tracking(p))
+    key = f"{parts.scheme.lower()}://{parts.netloc.lower()}{parts.path.rstrip('/')}"
+    return f"{key}?{'&'.join(params)}" if params else key
+
+
+def legacy_url_key(url: str) -> str:
+    """The pre-0.2 key (whole query dropped, everything lowercased), kept to migrate old history files."""
     return url.split("#")[0].split("?")[0].rstrip("/").lower()
 
 

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from vrec import history
+from vrec.playlist import legacy_url_key, url_key
 
 
 def test_legacy_migration_keys_statuses_and_details(tmp_path: Path) -> None:
@@ -99,7 +100,7 @@ def test_record_and_status_of(tmp_path: Path) -> None:
     history.record(path, videos, "https://example.com/a", "A", history.STATUS_DONE, "", "A.mp4", "1080p")
 
     assert history.status_of(videos, "https://example.com/a") == history.STATUS_DONE
-    assert history.status_of(videos, "https://Example.com/A/") == history.STATUS_DONE  # url_key normalized
+    assert history.status_of(videos, "https://EXAMPLE.com/a/") == history.STATUS_DONE  # url_key normalized
     assert history.status_of(videos, "https://example.com/missing") is None
 
     on_disk = history.load(path)
@@ -181,3 +182,43 @@ def test_adopt_existing_files_skips_already_known(tmp_path: Path) -> None:
 
     # Already-known videos are left alone, not overwritten with "found on disk".
     assert videos["https://example.com/a"]["status"] == history.STATUS_FAILED
+
+
+def _legacy_entry(url: str, status: str = history.STATUS_DONE) -> dict[str, str]:
+    return {"url": url, "title": "T", "status": status, "detail": "", "file": "", "quality": "", "date": ""}
+
+
+def test_load_migrates_old_format_keys_and_saves(tmp_path: Path) -> None:
+    path = tmp_path / "history.json"
+    old_key = "https://example.com/watch"  # legacy key: query dropped, lowercased
+    url = "https://example.com/watch?v=A"
+    path.write_text(json.dumps({"version": 1, "videos": {old_key: _legacy_entry(url)}}), encoding="utf-8")
+
+    videos = history.load(path)
+
+    assert old_key not in videos
+    assert history.status_of(videos, url) == history.STATUS_DONE
+    assert history.status_of(videos, "https://example.com/watch?v=B") is None
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["videos"]
+    assert list(on_disk) == [url_key(url)]
+
+
+def test_load_migrates_mixed_case_old_key(tmp_path: Path) -> None:
+    path = tmp_path / "history.json"
+    url = "https://Example.com/Video/ABC/"
+    path.write_text(
+        json.dumps({"version": 1, "videos": {legacy_url_key(url): _legacy_entry(url)}}), encoding="utf-8"
+    )
+    videos = history.load(path)
+    assert history.status_of(videos, url) == history.STATUS_DONE
+    assert history.status_of(videos, "https://example.com/Video/ABC") == history.STATUS_DONE
+
+
+def test_load_keeps_existing_new_key_entry(tmp_path: Path) -> None:
+    path = tmp_path / "history.json"
+    url = "https://example.com/a"
+    path.write_text(
+        json.dumps({"version": 1, "videos": {url_key(url): _legacy_entry(url, history.STATUS_REVIEW)}}),
+        encoding="utf-8",
+    )
+    assert history.status_of(history.load(path), url) == history.STATUS_REVIEW
