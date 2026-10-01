@@ -620,9 +620,17 @@ def test_virtual_screen_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_virtual_screen_missing_warns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(doctor.display, "list_screens", lambda: [_MAIN, _VIRTUAL])
+    ctx = _ctx(tmp_path, None, monkeypatch)
+    ctx.settings = Settings(display_screen="DISPLAY9")  # matches no screen
+    check = doctor.check_virtual_screen(ctx)
+    assert check.status == "warn"
+
+
+def test_virtual_screen_single_screen_is_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(doctor.display, "list_screens", lambda: [_MAIN])
     check = doctor.check_virtual_screen(_ctx(tmp_path, None, monkeypatch))
-    assert check.status == "warn"
+    assert check.status == "ok" and "main screen" in check.detail
 
 
 def test_virtual_screen_managed_needs_the_helper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

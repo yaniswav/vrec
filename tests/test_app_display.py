@@ -116,7 +116,8 @@ def test_window_moved_then_restored(tmp_path, monkeypatch, capsys):
 
 
 def test_no_virtual_screen_keeps_the_window_where_it_is(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(app.display, "list_screens", lambda: [MAIN])
+    monkeypatch.setattr(app.display, "list_screens", lambda: [MAIN, VIRTUAL])
+    monkeypatch.setattr(app.display, "pick_screen", lambda screens, wanted: None)
     monkeypatch.setattr(app, "move_window_to", lambda *a: pytest.fail("should not move"))
     monkeypatch.setattr(app, "window_state", lambda b, p, state=None: "maximized")
     batch = make_batch(tmp_path)

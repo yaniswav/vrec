@@ -9,6 +9,7 @@ vrec then triggers them with `schtasks /Run`, which needs no elevation and shows
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import time
@@ -173,15 +174,17 @@ def smaller_than(screen: Screen, canvas: tuple[int, int]) -> bool:
 def pick_screen(screens: Sequence[Screen], wanted: str = "auto") -> Screen | None:
     """The screen to record on.
 
-    "auto": the largest screen that isn't the main one. Otherwise a 1-based index ("2") or
-    part of the screen name ("DISPLAY3"), case-insensitive.
+    "auto": the largest screen that isn't the main one, or the main screen when it is the only
+    one. Otherwise a 1-based index ("2") or part of the screen name ("DISPLAY3"), case-insensitive.
     """
     wanted = wanted.strip()
     if not screens:
         return None
     if wanted.lower() in ("", "auto"):
         others = [s for s in screens if not s.primary]
-        return max(others, key=_area) if others else None
+        if others:
+            return max(others, key=_area)
+        return screens[0] if len(screens) == 1 else None
     if wanted.isdigit():
         index = int(wanted) - 1
         return screens[index] if 0 <= index < len(screens) else None
@@ -208,9 +211,43 @@ def wait_for_new_screen(
 # ---------- Turning the virtual display on/off (optional) ----------
 
 
+# The elevated tasks run this script, so it must not be writable without admin rights: it lives in
+# %ProgramData%\vrec with an ACL that only lets Administrators and SYSTEM change it.
+_ADMIN_ONLY_ACL = (
+    "/inheritance:r",
+    "/grant:r",
+    "*S-1-5-32-544:(OI)(CI)F",  # Administrators: full control
+    "/grant:r",
+    "*S-1-5-18:(OI)(CI)F",  # SYSTEM: full control
+    "/grant:r",
+    "*S-1-5-32-545:(OI)(CI)RX",  # Users: read and run only
+)
+# Adapter names are matched with PowerShell's -like: letters, digits, spaces and a few symbols are
+# enough, and anything else (quotes, typographic quotes, `;`, `$`...) could break out of the string.
+_PATTERN_RE = re.compile(r"[\w .()\-*?\[\]]{1,100}")
+
+
+def helper_dir() -> Path:
+    return Path(os.environ.get("PROGRAMDATA") or "C:/ProgramData") / "vrec"
+
+
 def helper_script_path() -> Path:
-    base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-    return base / "vrec" / "virtual-display.ps1"
+    return helper_dir() / "virtual-display.ps1"
+
+
+def legacy_helper_dir() -> Path:
+    """Where vrec 0.1 betas wrote the helper (user-writable): cleaned up on install/uninstall."""
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "vrec"
+
+
+def check_pattern(device_pattern: str) -> str:
+    """The pattern, if it is safe to put in the helper script; VrecError otherwise."""
+    if not _PATTERN_RE.fullmatch(device_pattern):
+        raise VrecError(
+            f"Unsupported adapter pattern: {device_pattern!r}. "
+            "Use letters, digits, spaces and * ? . ( ) - [ ] only."
+        )
+    return device_pattern
 
 
 def helper_pattern_path() -> Path:
@@ -220,7 +257,7 @@ def helper_pattern_path() -> Path:
 
 def helper_script(device_pattern: str) -> str:
     """PowerShell run by the scheduled tasks: enable/disable the display adapters matching the pattern."""
-    pattern = device_pattern.replace("'", "''")
+    pattern = check_pattern(device_pattern)
     return (
         "param([ValidateSet('on', 'off')][string]$State)\r\n"
         "# Created by vrec --install-display-helper. Removed by vrec --uninstall-display-helper.\r\n"
@@ -249,10 +286,9 @@ def virtual_display_enabled(run: Runner = _run) -> bool | None:
     None when it can't be told: helper not installed, or no adapter matches its pattern.
     """
     try:
-        pattern = helper_pattern_path().read_text(encoding="utf-8").strip()
-    except OSError:
+        quoted = check_pattern(helper_pattern_path().read_text(encoding="utf-8").strip())
+    except (OSError, VrecError):
         return None
-    quoted = pattern.replace("'", "''")
     result = run(
         [
             "powershell",
@@ -301,10 +337,16 @@ def _install_helper(device_pattern: str, run: Runner) -> Path:
             "This needs administrator rights once: open a terminal with 'Run as administrator' and run "
             "vrec --install-display-helper again."
         )
+    content = helper_script(device_pattern)  # validates the pattern before anything is written
+    folder = helper_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    locked = run(["icacls", str(folder), *_ADMIN_ONLY_ACL])
+    if locked.returncode != 0:
+        raise VrecError(f"Couldn't protect {folder}: {locked.stderr.strip() or locked.stdout.strip()}")
     script = helper_script_path()
-    script.parent.mkdir(parents=True, exist_ok=True)
-    script.write_text(helper_script(device_pattern), encoding="utf-8", newline="")
+    script.write_text(content, encoding="utf-8", newline="")
     helper_pattern_path().write_text(device_pattern, encoding="utf-8")
+    _remove_legacy_files()
     for task, state in ((TASK_ON, "on"), (TASK_OFF, "off")):
         # A one-time trigger in the past: the task never runs by itself, only on demand.
         result = run(
@@ -325,6 +367,12 @@ def uninstall_helper(run: Runner = _run) -> None:
         run(["schtasks", "/Delete", "/F", "/TN", task])
     helper_script_path().unlink(missing_ok=True)
     helper_pattern_path().unlink(missing_ok=True)
+    _remove_legacy_files()
+
+
+def _remove_legacy_files() -> None:
+    for name in ("virtual-display.ps1", "virtual-display-pattern.txt"):
+        (legacy_helper_dir() / name).unlink(missing_ok=True)
 
 
 def set_virtual_display(on: bool, run: Runner = _run) -> None:
