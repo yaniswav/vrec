@@ -86,6 +86,8 @@ class FakeCapture:
     pause_calls: int = 0
     resume_calls: int = 0
     black_checks: int = 0
+    alive: list[bool | None] = field(default_factory=lambda: [True])
+    alive_checks: int = 0
 
     def pause(self) -> None:
         self.pause_calls += 1
@@ -103,6 +105,10 @@ class FakeCapture:
 
     def audio_peak(self) -> float | None:
         return self.peak
+
+    def recording(self) -> bool | None:
+        self.alive_checks += 1
+        return self.alive[min(self.alive_checks - 1, len(self.alive) - 1)]
 
 
 class Log:
@@ -291,3 +297,44 @@ def test_limits():
     assert WatchConfig(duration=100).wall_limit() == 100 * 3 + 600
     assert WatchConfig(duration=math.inf).wall_limit() == 4 * 3600 + 600
     assert WatchConfig(duration=100, test_mode=True).wall_limit() == 30 + 600
+
+
+def test_obs_lost_when_the_recorder_stops_recording(clock):
+    player = SimPlayer(clock, duration=600)
+    outcome, capture, _ = run(player, FakeCapture(alive=[True, False]))
+    assert outcome.reason == StopReason.OBS_LOST
+    assert capture.alive_checks == 2
+    assert player.t < 80
+
+
+def test_obs_lost_after_two_unknown_checks_in_a_row(clock):
+    outcome, capture, _ = run(SimPlayer(clock, duration=600), FakeCapture(alive=[None, None]))
+    assert outcome.reason == StopReason.OBS_LOST
+    assert capture.alive_checks == 2
+
+
+def test_one_unknown_liveness_check_is_forgiven(clock):
+    outcome, _, _ = run(SimPlayer(clock, duration=100), FakeCapture(alive=[None, True, None, True]))
+    assert outcome.reason == StopReason.ENDED
+
+
+def test_liveness_check_exception_counts_as_unknown(clock):
+    class Boom(FakeCapture):
+        def recording(self) -> bool | None:
+            raise RuntimeError("socket closed")
+
+    outcome, _, _ = run(SimPlayer(clock, duration=600), Boom())
+    assert outcome.reason == StopReason.OBS_LOST
+
+
+def test_obs_lost_is_detected_while_buffering(clock):
+    player = SimPlayer(clock, duration=600, rate=0.0, initial_buffer=1)
+    outcome, _, _ = run(player, FakeCapture(alive=[False]), max_stall_s=10**6)
+    assert outcome.reason == StopReason.OBS_LOST
+
+
+def test_liveness_is_checked_only_every_30_seconds(clock):
+    start = clock.now
+    outcome, capture, _ = run(SimPlayer(clock, duration=100))
+    assert outcome.reason == StopReason.ENDED
+    assert capture.alive_checks == int((clock.now - start) // 30)

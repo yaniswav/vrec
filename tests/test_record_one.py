@@ -87,6 +87,9 @@ class FakeObs:
     def resume_record(self) -> None:
         self.events.append("resume")
 
+    def get_record_status(self) -> SimpleNamespace:
+        return SimpleNamespace(output_active=True)
+
 
 @pytest.fixture
 def patched(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, str]]:

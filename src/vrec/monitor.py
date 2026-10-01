@@ -24,6 +24,10 @@ TICK_S = 0.5
 # The page may pause the video on its own (focus loss, autoplay rules...): replay it at most
 # this many times in a row without progress.
 MAX_REPLAYS = 5
+# Seconds (wall time) between two checks that the recorder is still recording.
+LIVENESS_S = 30.0
+# Consecutive checks that couldn't tell before the recorder is considered lost.
+MAX_LIVENESS_UNKNOWN = 2
 
 
 class StopReason(StrEnum):
@@ -34,6 +38,7 @@ class StopReason(StrEnum):
     STALLED = "loading stalled"
     BLACK = "black image"
     TOO_LONG = "took too long"
+    OBS_LOST = "OBS stopped recording"
 
 
 class PlayerState(TypedDict):
@@ -74,6 +79,9 @@ class Capture(Protocol):
 
     def audio_peak(self) -> float | None:
         """Loudest audio level since the recording started; None if unavailable."""
+
+    def recording(self) -> bool | None:
+        """Whether the recorder is still recording; None if it couldn't tell."""
 
 
 @dataclass(frozen=True)
@@ -158,6 +166,7 @@ def watch(
     buffering, buffering_start, paused_time = False, 0.0, 0.0
     pause_allowed = config.buffer_pause
     best_buffer, last_growth = 0.0, 0.0
+    next_liveness, liveness_unknown = start + LIVENESS_S, 0
 
     while True:
         player.wait(TICK_S)
@@ -177,6 +186,17 @@ def watch(
             # Stops even mid-buffering: OBS can stop a paused recording just fine.
             outcome.reason = StopReason.TOO_LONG
             break
+
+        if now >= next_liveness:
+            next_liveness = now + LIVENESS_S
+            try:
+                alive = capture.recording()
+            except Exception:
+                alive = None
+            liveness_unknown = liveness_unknown + 1 if alive is None else 0
+            if alive is False or liveness_unknown >= MAX_LIVENESS_UNKNOWN:
+                outcome.reason = StopReason.OBS_LOST
+                break
 
         video_duration = state["d"]
         remaining = video_duration - state["t"] if _known(video_duration) else math.inf

@@ -9,12 +9,20 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from obsws_python.error import OBSSDKError, OBSSDKTimeoutError
 from PIL import Image
 
 from vrec import obs_control
-from vrec.config import Settings
+from vrec.config import Paths, Settings
 from vrec.errors import VrecError
-from vrec.obs_control import _AUDIO_SOURCE_KIND, AudioMeter, is_black_frame, prepare_audio, restore_mutes
+from vrec.obs_control import (
+    _AUDIO_SOURCE_KIND,
+    AudioMeter,
+    ObsUnreachable,
+    is_black_frame,
+    prepare_audio,
+    restore_mutes,
+)
 
 SCENE = "Scene"
 SOURCE_NAME = "Chrome Audio (VB-CABLE)"
@@ -296,3 +304,130 @@ def test_wait_until_ready_lets_other_errors_through() -> None:
             sleep=lambda s: None,
             clock=lambda: 0.0,  # type: ignore[arg-type]
         )
+
+
+# connect: only a real authentication failure counts as a wrong password
+
+
+def _connect_with(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, error: Exception, env: str = "") -> Paths:
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    paths.password.write_text("secret", encoding="utf-8")
+    if env:
+        monkeypatch.setenv("VREC_OBS_PASSWORD", env)
+    else:
+        monkeypatch.delenv("VREC_OBS_PASSWORD", raising=False)
+
+    def fake_client(**_kwargs: object) -> None:
+        raise error
+
+    monkeypatch.setattr(obs_control.obs, "ReqClient", fake_client)
+    return paths
+
+
+@pytest.mark.parametrize(
+    "error", [TimeoutError(), ConnectionRefusedError(), OSError("reset"), OBSSDKTimeoutError("t")]
+)
+def test_connect_keeps_the_password_when_obs_is_unreachable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, error: Exception
+) -> None:
+    paths = _connect_with(monkeypatch, tmp_path, error)
+    with pytest.raises(ObsUnreachable):
+        obs_control.connect(Settings(), paths)
+    assert paths.password.exists()
+
+
+def test_connect_deletes_the_password_on_auth_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths = _connect_with(monkeypatch, tmp_path, OBSSDKError("auth"))
+    with pytest.raises(VrecError, match="password is probably wrong") as info:
+        obs_control.connect(Settings(), paths)
+    assert not isinstance(info.value, ObsUnreachable)
+    assert not paths.password.exists()
+
+
+def test_connect_never_deletes_when_the_password_comes_from_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths = _connect_with(monkeypatch, tmp_path, OBSSDKError("auth"), env="fromenv")
+    with pytest.raises(VrecError, match="password is probably wrong"):
+        obs_control.connect(Settings(), paths)
+    assert paths.password.exists()
+
+
+def test_get_password_non_interactive_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("VREC_OBS_PASSWORD", raising=False)
+    monkeypatch.setattr(obs_control.sys, "stdin", SimpleNamespace(isatty=lambda: False))
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    with pytest.raises(VrecError, match="VREC_OBS_PASSWORD"):
+        obs_control.get_password(paths)
+    assert not paths.password.exists()
+
+
+def test_get_password_prompts_without_echo_and_saves(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("VREC_OBS_PASSWORD", raising=False)
+    monkeypatch.setattr(obs_control.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(obs_control.getpass, "getpass", lambda prompt="": " hunter2 ")
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    assert obs_control.get_password(paths) == ("hunter2", False)
+    assert paths.password.read_text(encoding="utf-8") == "hunter2"
+
+
+def test_get_password_getpass_failure_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def broken(prompt: str = "") -> str:
+        raise EOFError
+
+    monkeypatch.delenv("VREC_OBS_PASSWORD", raising=False)
+    monkeypatch.setattr(obs_control.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(obs_control.getpass, "getpass", broken)
+    with pytest.raises(VrecError, match="No OBS WebSocket password saved"):
+        obs_control.get_password(Paths(data_dir=tmp_path, config=tmp_path / "config.toml"))
+
+
+# stop_if_recording
+
+
+class _StopClient:
+    def __init__(self, status: object = True, stop: object = "C:/v.mkv") -> None:
+        self.status, self.stop = status, stop
+        self.stop_calls = 0
+
+    def get_record_status(self) -> SimpleNamespace:
+        if isinstance(self.status, Exception):
+            raise self.status
+        return SimpleNamespace(output_active=self.status)
+
+    def stop_record(self) -> SimpleNamespace:
+        self.stop_calls += 1
+        if isinstance(self.stop, Exception):
+            raise self.stop
+        return SimpleNamespace(output_path=self.stop)
+
+
+def test_stop_if_recording_returns_the_path() -> None:
+    assert obs_control.stop_if_recording(_StopClient()) == "C:/v.mkv"  # type: ignore[arg-type]
+
+
+def test_stop_if_recording_idle_does_nothing() -> None:
+    client = _StopClient(status=False)
+    assert obs_control.stop_if_recording(client) is None  # type: ignore[arg-type]
+    assert client.stop_calls == 0
+
+
+def test_stop_if_recording_warns_when_stopping_fails(capsys: pytest.CaptureFixture[str]) -> None:
+    client = _StopClient(stop=RuntimeError("boom\nmore"))
+    assert obs_control.stop_if_recording(client) is None  # type: ignore[arg-type]
+    assert "Couldn't stop the OBS recording: boom. Stop it in OBS." in capsys.readouterr().out
+
+
+def test_stop_if_recording_still_stops_after_a_status_timeout() -> None:
+    client = _StopClient(status=OBSSDKTimeoutError("slow"))
+    assert obs_control.stop_if_recording(client) == "C:/v.mkv"  # type: ignore[arg-type]
+    assert client.stop_calls == 1
+
+
+def test_stop_if_recording_warns_when_status_and_stop_both_fail(capsys: pytest.CaptureFixture[str]) -> None:
+    client = _StopClient(status=TimeoutError("slow"), stop=OBSSDKTimeoutError("slow too"))
+    assert obs_control.stop_if_recording(client) is None  # type: ignore[arg-type]
+    assert client.stop_calls == 1
+    assert "Couldn't stop the OBS recording" in capsys.readouterr().out
