@@ -48,6 +48,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--disable", nargs="+", metavar="NAME", default=None, help="turn one or more features off"
     )
     parser.add_argument("--version", action="version", version=f"vrec {__version__}")
+    parser.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
     _add_schedule_arguments(parser)
     _add_selection_arguments(parser)
     _add_display_arguments(parser)
@@ -178,7 +179,43 @@ def _add_schedule_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _selftest() -> int:
+    """Import every dependency and load every bundled JS file (used to smoke-test vrec.exe)."""
+    import importlib
+    import importlib.resources
+
+    for module in ("vrec.app", "vrec.doctor", "playwright.sync_api", "obsws_python", "PIL.Image"):
+        try:
+            importlib.import_module(module)
+        except Exception as e:
+            print(f"selftest failed: cannot import {module}: {type(e).__name__}: {e}")
+            return 1
+
+    from vrec.browser import load_js
+
+    try:
+        names = sorted(
+            entry.name
+            for entry in importlib.resources.files("vrec").joinpath("js").iterdir()
+            if entry.name.endswith(".js")
+        )
+        if not names:
+            print("selftest failed: no JS files found")
+            return 1
+        for name in names:
+            if not load_js(name).strip():
+                print(f"selftest failed: JS file {name} is empty")
+                return 1
+    except Exception as e:
+        print(f"selftest failed: cannot load JS files: {type(e).__name__}: {e}")
+        return 1
+    print("selftest ok")
+    return 0
+
+
 def _run(args: argparse.Namespace, argv: list[str]) -> int:
+    if args.selftest:
+        return _selftest()
     if args.schedule is not None:
         return _run_schedule(args)
     if args.install_display_helper or args.uninstall_display_helper:
@@ -227,8 +264,14 @@ def _dispatch(args: argparse.Namespace, paths: Paths, features: FeatureSet) -> i
     """Run the doctor or a recording session (inside the run log)."""
     try:
         from vrec import app, doctor
-    except ImportError:
-        print("Missing dependencies. Run scripts\\windows\\install.bat (or: pip install -e .).")
+    except ImportError as e:
+        from vrec.console import first_line
+
+        print(f"Missing dependency: {first_line(e)}")
+        if getattr(sys, "frozen", False):
+            print("This download looks incomplete or corrupted. Download the zip again and re-extract it.")
+        else:
+            print("Run scripts\\windows\\install.bat (or: pip install -e .).")
         return 1
 
     if args.launch_chrome:
