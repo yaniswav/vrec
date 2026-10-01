@@ -34,7 +34,13 @@ globalThis.XMLHttpRequest = FakeXHR;
 
 let body = "";
 let contentType = "application/vnd.apple.mpegurl";
-globalThis.fetch = async () => new Response(body, { headers: { "content-type": contentType } });
+// Like a real server, manifests come with a content-length unless a test overrides the response.
+let override = null;
+globalThis.fetch = async () =>
+  override ??
+  new Response(body, {
+    headers: { "content-type": contentType, "content-length": String(Buffer.byteLength(body)) },
+  });
 
 eval(src);
 
@@ -102,6 +108,54 @@ await runManifest("hls-single", singleHls, 0, "application/vnd.apple.mpegurl", /
     kept: [],
     forced: window.__vrecForcedQuality ?? null,
     unchanged: out === jsonBody,
+  });
+}
+
+// A streaming response (SSE / long-poll / chunked, no content-length) must come back at once and
+// untouched, even though its body never ends.
+{
+  const stream = new ReadableStream({ start() {} });
+  override = new Response(stream, { headers: { "content-type": "text/event-stream" } });
+  const sse = override;
+  const response = await window.fetch("https://example.test/events");
+  results.push({
+    format: "stream",
+    cap: 0,
+    kept: [],
+    forced: window.__vrecForcedQuality ?? null,
+    unchanged: response === sse,
+  });
+  // Same for a manifest-typed response that declares no length.
+  override = new Response(new ReadableStream({ start() {} }), {
+    headers: { "content-type": "application/vnd.apple.mpegurl" },
+  });
+  const live = override;
+  const noLength = await window.fetch("https://example.test/live.m3u8");
+  results.push({ format: "no-length", cap: 0, kept: [], forced: null, unchanged: noLength === live });
+  override = null;
+}
+
+// An octet-stream segment is returned untouched; an octet-stream .m3u8 is still filtered.
+{
+  window.__vrecMaxHeight = 0;
+  body = hls;
+  contentType = "application/octet-stream";
+  const segment = await window.fetch("https://example.test/seg1.ts?x=1");
+  results.push({
+    format: "octet-segment",
+    cap: 0,
+    kept: [],
+    forced: window.__vrecForcedQuality ?? null,
+    unchanged: (await segment.text()) === hls,
+  });
+  const manifest = await window.fetch("https://example.test/master.m3u8?token=1");
+  const out = await manifest.text();
+  results.push({
+    format: "octet-manifest",
+    cap: 0,
+    kept: [...out.matchAll(/(low|mid|high)\.m3u8/g)].map((m) => m[1]),
+    forced: window.__vrecForcedQuality ?? null,
+    unchanged: out === hls,
   });
 }
 
