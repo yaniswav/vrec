@@ -296,3 +296,83 @@ def test_launcher_command_of_the_packaged_exe_has_no_module_flag(monkeypatch) ->
     command = schedule._launcher_command(Path("data"), None)
     assert "-m vrec" not in command
     assert "--all" in command
+
+
+# --- launcher: code page, % escaping, accented paths -----------------------
+
+
+def test_launcher_sets_utf8_code_page_and_uses_crlf(_local_appdata: Path, tmp_path: Path) -> None:
+    schedule.schedule_on("06:30", None, tmp_path / "data", None, runner=FakeRunner())
+    raw = _launcher(_local_appdata).read_bytes()
+    assert raw.startswith(b"@echo off\r\nchcp 65001 >nul\r\n")
+    assert b"\n" not in raw.replace(b"\r\n", b"")
+
+
+def test_launcher_escapes_percent_in_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _local_appdata: Path
+) -> None:
+    cwd_dir = tmp_path / "100%done"
+    cwd_dir.mkdir()
+    monkeypatch.chdir(cwd_dir)
+    data_dir = tmp_path / "%TEMP%data"
+
+    schedule.schedule_on("06:30", None, data_dir, None, runner=FakeRunner())
+
+    content = _launcher(_local_appdata).read_text(encoding="utf-8")
+    assert f'cd /d "{cwd_dir.parent}{chr(92)}100%%done"' in content
+    assert "%%TEMP%%data" in content
+    assert "%TEMP%data" not in content.replace("%%TEMP%%data", "")
+    assert content.strip().endswith("exit /b %ERRORLEVEL%")
+
+
+def test_launcher_keeps_accented_paths_as_utf8(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _local_appdata: Path
+) -> None:
+    cwd_dir = tmp_path / "Vidéos été"
+    cwd_dir.mkdir()
+    monkeypatch.chdir(cwd_dir)
+
+    schedule.schedule_on("06:30", None, tmp_path / "données", None, runner=FakeRunner())
+
+    raw = _launcher(_local_appdata).read_bytes()
+    assert "Vidéos été".encode() in raw
+    assert "données".encode() in raw
+
+
+# --- schtasks output decoding ------------------------------------------------
+
+
+def test_decode_console_uses_the_oem_code_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(schedule, "_oem_encoding", lambda: "cp850")
+    data = "Prochaine exécution: 01/01/2026\nDernier résultat: 0".encode("cp850")
+    assert schedule._decode_console(data) == "Prochaine exécution: 01/01/2026\nDernier résultat: 0"
+    assert schedule._decode_console(None) == ""
+    assert schedule._decode_console("déjà str") == "déjà str"
+
+
+def test_decoded_oem_output_parses_french_labels(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(schedule, "_oem_encoding", lambda: "cp850")
+    raw = "Prochaine exécution: 02/10/2026 07:30:00\nDernier résultat: 0\n".encode("cp850")
+    runner = FakeRunner(stdout=schedule._decode_console(raw))
+    out = schedule.schedule_status(runner=runner)
+    assert "Next run: 02/10/2026 07:30:00" in out
+    assert "Last result: 0 (success)" in out
+
+
+def test_oem_encoding_is_a_known_codec() -> None:
+    import codecs
+
+    codecs.lookup(schedule._oem_encoding())
+
+
+def test_default_runner_decodes_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(schedule, "_oem_encoding", lambda: "cp850")
+
+    def fake_run(args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        assert "text" not in kwargs
+        return subprocess.CompletedProcess(args, 0, "résultat".encode("cp850"), b"")  # type: ignore[arg-type]
+
+    monkeypatch.setattr(schedule.subprocess, "run", fake_run)
+    result = schedule._default_runner(["schtasks"])
+    assert result.stdout == "résultat"
+    assert result.stderr == ""

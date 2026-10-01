@@ -38,8 +38,33 @@ _NEXT_RUN_LABELS = {"next run time", "prochaine exécution"}
 _LAST_RESULT_LABELS = {"last result", "dernier résultat"}
 
 
+def _oem_encoding() -> str:
+    """Name of the console (OEM) code page, which is what schtasks writes its output in."""
+    try:
+        import ctypes
+
+        code_page = int(ctypes.windll.kernel32.GetOEMCP())
+        encoding = f"cp{code_page}"
+        "".encode(encoding)  # make sure Python knows this code page
+        return encoding
+    except Exception:
+        return "mbcs" if sys.platform.startswith("win") else "utf-8"
+
+
+def _decode_console(data: bytes | str | None) -> str:
+    """Decode console output with the OEM code page so accented labels survive."""
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    return data.decode(_oem_encoding(), errors="replace")
+
+
 def _default_runner(args: Sequence[str]) -> CompletedProcess[str]:
-    return subprocess.run(args, capture_output=True, text=True, check=False)
+    raw = subprocess.run(args, capture_output=True, check=False)
+    return CompletedProcess(
+        raw.args, raw.returncode, _decode_console(raw.stdout), _decode_console(raw.stderr)
+    )
 
 
 def _require_windows() -> None:
@@ -84,8 +109,21 @@ def _launcher_command(data_dir: Path, config: Path | None) -> str:
     return " ".join(parts)
 
 
+def _batch_escape(text: str) -> str:
+    """Escape text for a .cmd file: a literal % must be doubled or cmd expands it."""
+    return text.replace("%", "%%")
+
+
 def _launcher_script(cwd: Path, command: str) -> str:
-    return f'@echo off\ncd /d "{cwd}"\n{command}\nexit /b %ERRORLEVEL%\n'
+    # chcp 65001 makes cmd read the UTF-8 file correctly (accented paths); CRLF is what cmd expects.
+    lines = [
+        "@echo off",
+        "chcp 65001 >nul",
+        f'cd /d "{_batch_escape(str(cwd))}"',
+        _batch_escape(command),
+        "exit /b %ERRORLEVEL%",
+    ]
+    return "\r\n".join(lines) + "\r\n"
 
 
 def _schtasks_create_args(time: str, days: str | None, launcher: Path) -> list[str]:
@@ -116,7 +154,7 @@ def schedule_on(
     launcher = _launcher_path()
     launcher.parent.mkdir(parents=True, exist_ok=True)
     command = _launcher_command(data_dir.resolve(), config.resolve() if config is not None else None)
-    launcher.write_text(_launcher_script(Path.cwd(), command), encoding="utf-8")
+    launcher.write_text(_launcher_script(Path.cwd(), command), encoding="utf-8", newline="")
 
     result = runner(_schtasks_create_args(time, days_arg, launcher))
     if result.returncode != 0:

@@ -96,11 +96,21 @@
     window.fetch = async function (...args) {
         const response = await originalFetch.apply(this, args);
         try {
+            // Only small, length-declared manifest-like responses are inspected. Anything else
+            // (streams, long-polls, segments, unknown length) is returned untouched, at once:
+            // reading it here would keep the page waiting for the whole body.
             const type = (response.headers.get('content-type') || '').toLowerCase();
-            const size = +(response.headers.get('content-length') || 0);
-            if (/^(video|audio|image|font)\//.test(type) || size > 5e6) return response;
+            const lengthHeader = response.headers.get('content-length');
+            const size = lengthHeader === null || lengthHeader.trim() === '' ? NaN : +lengthHeader;
+            if (!(size >= 0 && size <= 2e6) || type.includes('event-stream')) return response;
+            const first = args[0];
+            const requestUrl = response.url || (typeof first === 'string' ? first : first && first.url) || '';
+            const path = String(requestUrl).split(/[?#]/)[0].toLowerCase();
+            const manifestType = /mpegurl|dash\+xml|text\/plain|xml/.test(type)
+                || (type.includes('application/octet-stream') && /\.(m3u8|mpd)$/.test(path));
+            if (!manifestType) return response;
             const buf = await response.clone().arrayBuffer();
-            if (buf.byteLength > 5e6 || !looksLikeManifest(buf)) return response;
+            if (buf.byteLength > 2e6 || !looksLikeManifest(buf)) return response;
             const f = filter(new TextDecoder().decode(buf));
             if (f === null) return response;
             const headers = new Headers(response.headers);

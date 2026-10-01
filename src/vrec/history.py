@@ -11,9 +11,10 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypedDict, cast
+from urllib.parse import urlsplit
 
 from vrec.naming import find_existing_recording
-from vrec.playlist import url_key
+from vrec.playlist import legacy_url_key, url_key
 
 STATUS_DONE = "done"
 STATUS_MARKED = "marked"
@@ -86,9 +87,13 @@ def load(path: Path) -> Videos:
             # A newer (or damaged) file: never overwrite or migrate it.
             return _set_aside(path)
         # Our own previously-saved file (see `save()`); drop anything that isn't an entry.
-        return cast(Videos, {k: v for k, v in videos.items() if isinstance(v, dict)})
+        kept = cast(Videos, {k: v for k, v in videos.items() if isinstance(v, dict)})
+        if _rekey_legacy(kept):
+            save(path, kept)
+        return kept
 
     videos = _migrate_legacy(raw)
+    _rekey_legacy(videos)
     save(path, videos)
     return videos
 
@@ -99,6 +104,26 @@ def _set_aside(path: Path) -> Videos:
     path.replace(broken)
     print(f"{path.name} was unreadable: set aside as {broken.name}.")
     return {}
+
+
+def _rekey_legacy(videos: Videos) -> bool:
+    """Move entries stored under an old-format key (see `legacy_url_key`) to the current `url_key`.
+
+    The entry's own `url` tells us what it was recorded for. Returns True if anything moved.
+    An entry already present under the new key wins.
+    """
+    changed = False
+    for key in list(videos):
+        entry = videos[key]
+        url = entry.get("url", "") if isinstance(entry, dict) else ""
+        if not url or key != legacy_url_key(url):
+            continue
+        new_key = url_key(url)
+        if new_key != key:
+            del videos[key]
+            videos.setdefault(new_key, entry)
+            changed = True
+    return changed
 
 
 def _migrate_legacy(raw: dict[str, Any]) -> Videos:
@@ -179,7 +204,7 @@ def display_title(videos: Videos, url: str, title: str | None) -> str:
     known = videos.get(url_key(url))
     if isinstance(known, dict) and isinstance(known.get("title"), str) and known["title"]:
         return known["title"]
-    return url_key(url).rsplit("/", 1)[-1].replace("-", " ").strip() or url
+    return urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").strip() or url
 
 
 def adopt_existing_files(

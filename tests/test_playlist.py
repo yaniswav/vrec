@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from vrec.playlist import read_playlist, url_key
+from vrec.playlist import legacy_url_key, read_playlist, url_key
 
 
 def test_bare_links(tmp_path: Path) -> None:
@@ -44,21 +44,29 @@ def test_comments_and_blank_lines_ignored(tmp_path: Path) -> None:
     ]
 
 
-def test_dedup_by_query_string(tmp_path: Path) -> None:
+def test_dedup_ignores_tracking_params(tmp_path: Path) -> None:
     path = tmp_path / "videos.txt"
     path.write_text(
-        "https://example.com/a?x=1\nhttps://example.com/a?x=2\n",
+        "https://example.com/watch?v=A\nhttps://example.com/watch?v=A&utm_source=x&si=zz\n",
         encoding="utf-8",
     )
     videos = read_playlist(path)
-    assert len(videos) == 1
-    assert videos[0][0] == "https://example.com/a?x=1"
+    assert videos == [("https://example.com/watch?v=A", None)]
 
 
-def test_dedup_by_case(tmp_path: Path) -> None:
+def test_different_video_ids_are_two_entries(tmp_path: Path) -> None:
     path = tmp_path / "videos.txt"
     path.write_text(
-        "https://Example.com/A\nhttps://example.com/a\n",
+        "https://example.com/watch?v=A\nhttps://example.com/watch?v=B\n",
+        encoding="utf-8",
+    )
+    assert len(read_playlist(path)) == 2
+
+
+def test_dedup_by_host_case(tmp_path: Path) -> None:
+    path = tmp_path / "videos.txt"
+    path.write_text(
+        "https://Example.com/A\nhttps://EXAMPLE.com/A\n",
         encoding="utf-8",
     )
     videos = read_playlist(path)
@@ -116,19 +124,27 @@ def test_title_carried_from_previous_non_url_line_only_once(tmp_path: Path) -> N
     ]
 
 
-def test_url_key_strips_fragment_and_query() -> None:
-    assert url_key("https://example.com/a?x=1#y") == "https://example.com/a"
+def test_url_key_drops_fragment_and_tracking_params() -> None:
+    assert url_key("https://example.com/a?x=1&utm_medium=m&fbclid=q#y") == "https://example.com/a?x=1"
 
 
-def test_url_key_lowercases() -> None:
-    assert url_key("https://Example.COM/A") == "https://example.com/a"
+def test_url_key_lowercases_scheme_and_host_only() -> None:
+    assert url_key("HTTPS://Example.COM/Watch/ABC") == "https://example.com/Watch/ABC"
 
 
 def test_url_key_strips_trailing_slash() -> None:
     assert url_key("https://example.com/a/") == "https://example.com/a"
 
 
+def test_url_key_keeps_query_case_and_sorts_params() -> None:
+    assert url_key("https://example.com/w?b=2&v=Abc") == url_key("https://example.com/w?v=Abc&b=2")
+    assert url_key("https://example.com/w?v=A") != url_key("https://example.com/w?v=a")
+
+
 def test_url_key_stable_for_equivalent_urls() -> None:
-    a = url_key("https://Example.com/A/?ref=share#top")
-    b = url_key("https://example.com/a")
-    assert a == b
+    a = url_key("https://Example.com/a/?ref=share&gclid=1&feature=x&ref_src=y#top")
+    assert a == url_key("https://example.com/a")
+
+
+def test_legacy_url_key_is_the_old_format() -> None:
+    assert legacy_url_key("https://Example.com/A/?v=B#x") == "https://example.com/a"

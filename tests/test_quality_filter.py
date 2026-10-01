@@ -83,3 +83,19 @@ def test_non_manifest_json_is_untouched(results) -> None:
     r = results[("json", 0)]
     assert r["unchanged"] is True
     assert r["forced"] is None
+
+
+def test_streaming_response_resolves_untouched(results) -> None:
+    # The harness's body never ends: reaching this assertion at all proves fetch() did not wait for it.
+    assert results[("stream", 0)]["unchanged"] is True
+    assert results[("no-length", 0)]["unchanged"] is True
+
+
+def test_octet_stream_segment_is_untouched(results) -> None:
+    assert results[("octet-segment", 0)]["unchanged"] is True
+
+
+def test_octet_stream_manifest_url_is_still_filtered(results) -> None:
+    r = results[("octet-manifest", 0)]
+    assert r["kept"] == ["high"]
+    assert r["unchanged"] is False
