@@ -14,7 +14,11 @@ async (label) => {
     }
     const outputs = devices.filter(d => d.kind === 'audiooutput');
     const wanted = String(label || '').toLowerCase();
-    const device = outputs.find(d => d.label && d.label.toLowerCase().includes(wanted));
+    const matches = outputs.filter(d => d.label && d.label.toLowerCase().includes(wanted));
+    // Prefer the device itself over Chrome's "default"/"communications" aliases, whose label also
+    // contains its name when it is Windows' default output.
+    const device = matches.find(d => d.deviceId !== 'default' && d.deviceId !== 'communications')
+        || matches[0];
     if (!device) {
         const named = outputs.some(d => d.label);
         return { ok: false, reason: named ? `no audio output named "${label}"` : 'no permission to list audio outputs' };

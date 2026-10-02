@@ -20,6 +20,12 @@ const outputs = {
         { kind: 'audiooutput', label: 'Speakers (Realtek)', deviceId: 'spk' },
         { kind: 'audiooutput', label: 'CABLE Input (VB-Audio Virtual Cable)', deviceId: 'cable' },
     ],
+    // CABLE Input is Windows' default output: Chrome lists its "default" alias first.
+    aliased: [
+        { kind: 'audiooutput', label: 'Default - CABLE Input (VB-Audio Virtual Cable)', deviceId: 'default' },
+        { kind: 'audiooutput', label: 'Communications - CABLE Input (VB-Audio Virtual Cable)', deviceId: 'communications' },
+        { kind: 'audiooutput', label: 'CABLE Input (VB-Audio Virtual Cable)', deviceId: 'cable' },
+    ],
     unlabelled: [
         { kind: 'audiooutput', label: '', deviceId: 'a' },
         { kind: 'audiooutput', label: '', deviceId: 'b' },
@@ -39,7 +45,7 @@ const video = {
 };
 if (scenario !== 'unsupported') window.__vrecVideo = video;
 Object.defineProperty(globalThis, 'navigator', {
-    value: { mediaDevices: { enumerateDevices: async () => outputs[scenario === 'unlabelled' ? 'unlabelled' : 'labelled'] } },
+    value: { mediaDevices: { enumerateDevices: async () => outputs[outputs[scenario] ? scenario : 'labelled'] } },
     configurable: true,
 });
 

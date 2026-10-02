@@ -7,8 +7,12 @@ async ([label, seconds]) => {
         if (label && typeof ctx.setSinkId === 'function' && navigator.mediaDevices) {
             const devices = await navigator.mediaDevices.enumerateDevices();
             const wanted = label.toLowerCase();
-            const out = devices.find(
+            const matches = devices.filter(
                 d => d.kind === 'audiooutput' && d.label && d.label.toLowerCase().includes(wanted));
+            // Prefer the device itself over Chrome's "default"/"communications" aliases, whose label
+            // also contains its name when it is Windows' default output.
+            const out = matches.find(d => d.deviceId !== 'default' && d.deviceId !== 'communications')
+                || matches[0];
             if (out) {
                 await ctx.setSinkId(out.deviceId);
                 sink = out.label;

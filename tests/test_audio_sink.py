@@ -37,6 +37,13 @@ def test_routes_the_video_and_every_audio_context():
 
 
 @needs_node
+def test_prefers_the_device_over_the_default_alias():
+    data = run("aliased")
+    assert data["videoSink"] == "cable"
+    assert data["result"]["label"] == "CABLE Input (VB-Audio Virtual Cable)"
+
+
+@needs_node
 def test_missing_output_name():
     data = run("missing")
     assert data["result"] == {"ok": False, "reason": 'no audio output named "Nope"'}
