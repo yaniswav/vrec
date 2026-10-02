@@ -14,16 +14,32 @@ from typing import Any
 import obsws_python as obs
 
 CAPTURE_KIND = "monitor_capture"
+WINDOW_KIND = "window_capture"
+# What vrec can record from: the whole virtual screen, or the recording Chrome window.
+CAPTURE_MODES = {"screen": CAPTURE_KIND, "window": WINDOW_KIND}
 # The monitor setting of a display capture: "monitor_id" since OBS 27.2, "monitor" before.
 MONITOR_KEYS = ("monitor_id", "monitor")
+# Sources that put a picture in the scene: a visible one next to vrec's capture is recorded too.
+PICTURE_KINDS = (CAPTURE_KIND, WINDOW_KIND, "game_capture")
+
+# Settings of the captures vrec creates. Window capture: "Windows 10" method (the BitBlt one shows a
+# black image with Chrome), and the window title must match exactly, so OBS never falls back to
+# another Chrome window (your usual browser) when the title changes.
+_NEW_CAPTURE_SETTINGS: dict[str, dict[str, Any]] = {
+    "screen": {"capture_cursor": False},
+    "window": {"method": 2, "priority": 1, "cursor": False, "capture_audio": False, "client_area": True},
+}
+_CHROME_SUFFIX = " - Google Chrome"
 
 
 @dataclass(frozen=True)
 class SceneSetup:
     scene: str
-    capture: str  # name of the display capture source in that scene
+    capture: str  # name of the capture source vrec records from in that scene
     created_scene: bool = False
     created_capture: bool = False
+    shown_capture: bool = False  # vrec's own capture was hidden in the scene and has been shown
+    also_visible: tuple[str, ...] = ()  # other visible picture sources in the scene (recorded too)
 
 
 @dataclass(frozen=True)
@@ -42,28 +58,106 @@ def scene_names(client: obs.ReqClient) -> list[str]:
     return [s["sceneName"] for s in client.get_scene_list().scenes]
 
 
-def ensure_scene(client: obs.ReqClient, scene: str) -> SceneSetup:
-    """Make sure `scene` exists and holds a display capture; create only what's missing."""
+def ensure_scene(client: obs.ReqClient, scene: str, mode: str = "screen") -> SceneSetup:
+    """Make sure `scene` exists and shows a capture of the right kind; create only what's missing.
+
+    `mode` is "screen" (display capture) or "window" (window capture). A visible capture of that
+    kind already in the scene is used as is (yours, if you set one up). Otherwise vrec's own
+    capture ("<scene> screen" / "<scene> window") is shown if it was hidden, or created.
+    """
+    kind = CAPTURE_MODES[mode]
     created_scene = scene not in scene_names(client)
     if created_scene:
         client.create_scene(scene)
 
-    capture = next(
-        (i["sourceName"] for i in _items(client, scene) if i.get("inputKind") == CAPTURE_KIND), None
-    )
-    if capture:
-        return SceneSetup(scene, capture, created_scene=created_scene)
-
-    capture = f"{scene} screen"
-    existing = [i["inputName"] for i in client.get_input_list(CAPTURE_KIND).inputs]
-    if capture in existing:
-        item_id = client.create_scene_item(scene, capture, True).scene_item_id
+    items = _items(client, scene)
+    own = f"{scene} {mode}"
+    same_kind = [i for i in items if i.get("inputKind") == kind]
+    visible = [i for i in same_kind if i.get("sceneItemEnabled", True)]
+    created_capture = shown_capture = False
+    if visible:
+        capture = visible[0]["sourceName"]
+    elif own_item := next((i for i in same_kind if i["sourceName"] == own), None):
+        client.set_scene_item_enabled(scene, own_item["sceneItemId"], True)
+        capture, shown_capture = own, True
     else:
-        item_id = client.create_input(
-            scene, capture, CAPTURE_KIND, {"capture_cursor": False}, True
-        ).scene_item_id
-    fit_to_canvas(client, scene, item_id)
-    return SceneSetup(scene, capture, created_scene=created_scene, created_capture=True)
+        capture = own
+        existing = [i["inputName"] for i in client.get_input_list(kind).inputs]
+        if capture in existing:
+            item_id = client.create_scene_item(scene, capture, True).scene_item_id
+        else:
+            item_id = client.create_input(
+                scene, capture, kind, dict(_NEW_CAPTURE_SETTINGS[mode]), True
+            ).scene_item_id
+        fit_to_canvas(client, scene, item_id)
+        created_capture = True
+
+    also_visible = tuple(
+        i["sourceName"]
+        for i in _items(client, scene)
+        if i.get("inputKind") in PICTURE_KINDS
+        and i.get("sceneItemEnabled", True)
+        and i["sourceName"] != capture
+    )
+    return SceneSetup(
+        scene,
+        capture,
+        created_scene=created_scene,
+        created_capture=created_capture,
+        shown_capture=shown_capture,
+        also_visible=also_visible,
+    )
+
+
+def _decode_title(encoded: str) -> str:
+    """OBS stores window titles with ':' as '#3A' and '#' as '#22'."""
+    return encoded.replace("#3A", ":").replace("#22", "#")
+
+
+def chrome_window(client: obs.ReqClient, capture: str, page_title: str) -> str | None:
+    """OBS's identifier of the Chrome window showing `page_title`, from OBS's own window list.
+
+    An exact "<title> - Google Chrome" match wins; otherwise a Chrome window whose title starts
+    with the page title (Chrome may shorten or decorate it). None if no window matches.
+    """
+    title = page_title.strip()
+    if not title:
+        return None
+    try:
+        items = client.get_input_properties_list_property_items(capture, "window").property_items
+    except Exception:
+        return None
+    windows: list[tuple[str, str]] = []
+    for item in items:
+        value = str(item.get("itemValue", ""))
+        parts = value.rsplit(":", 2)
+        if len(parts) == 3 and parts[2].lower() == "chrome.exe":
+            windows.append((_decode_title(parts[0]), value))
+    for name, value in windows:
+        if name == title + _CHROME_SUFFIX:
+            return value
+    if len(title) >= 4:
+        for name, value in windows:
+            if name.startswith(title):
+                return value
+    return None
+
+
+def target_window(client: obs.ReqClient, capture: str, page_title: str) -> bool:
+    """Point a window capture at the Chrome window showing `page_title`. Returns whether it was found."""
+    window = chrome_window(client, capture, page_title)
+    if window is None:
+        return False
+    current: dict[str, Any] = client.get_input_settings(capture).input_settings
+    if current.get("window") != window or current.get("priority") != 1:
+        client.set_input_settings(capture, {"window": window, "priority": 1}, True)
+    return True
+
+
+def item_enabled(client: obs.ReqClient, scene: str, source: str) -> bool | None:
+    """Whether `source` is visible in `scene` (None if it isn't in the scene)."""
+    item = next((i for i in _items(client, scene) if i["sourceName"] == source), None)
+    return None if item is None else bool(item.get("sceneItemEnabled", True))
 
 
 def fit_to_canvas(client: obs.ReqClient, scene: str, item_id: int) -> None:

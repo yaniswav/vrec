@@ -23,6 +23,10 @@ start_timeout = 60
 # with a display capture, if it doesn't already exist; reused as is otherwise. Ignored if obs_scene
 # is turned off.
 scene = "vrec"
+# What OBS records: "screen" (a display capture of the whole virtual screen) or "window" (a
+# window capture of the recording Chrome window only, so nothing else on that screen is filmed).
+# In window mode, vrec points the capture at the Chrome window before each video.
+capture = "screen"
 
 [chrome]
 # Remote debugging port Chrome was started with (see scripts/windows/launch_chrome.bat).

@@ -33,6 +33,9 @@ TEST_COLORS: tuple[tuple[int, int, int], ...] = ((255, 0, 255), (0, 255, 255))
 MIN_COLOR_SHARE = 0.6
 COLOR_TOLERANCE = 60
 
+# Title of the local test page: the Chrome window then shows "vrec check - Google Chrome".
+TEST_TITLE = "vrec check"
+
 TEST_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><title>vrec check</title>
 <style>html,body{margin:0;height:100%;background:#000;cursor:none}</style></head>
@@ -138,6 +141,7 @@ class Context:
     audio_output: str  # "" to play the tone on the default output
     audio_level: float
     wait: Callable[[float], None] = time.sleep
+    capture_mode: str = "screen"  # "window": `capture` is a window capture to point at Chrome
 
 
 def check_screen(ctx: Context) -> CheckResult:
@@ -190,6 +194,13 @@ def check_capture(ctx: Context) -> CheckResult:
     def settle() -> None:
         ctx.wait(0.8)
 
+    if ctx.capture_mode == "window" and not obs_scene.target_window(ctx.client, ctx.capture, TEST_TITLE):
+        return CheckResult(
+            False,
+            title,
+            "OBS can't find the recording Chrome window",
+            hint="Open it with launch_chrome.bat, and keep it a normal Chrome window (not minimized).",
+        )
     if shows_colors(set_color, grab, settle):
         return CheckResult(True, title, f"'{ctx.capture}' shows the Chrome window")
     if ctx.can_retarget:
@@ -207,7 +218,11 @@ def check_capture(ctx: Context) -> CheckResult:
         False,
         title,
         f"'{ctx.capture}' doesn't show the Chrome window",
-        hint="In OBS, point the display capture at the virtual screen, and keep Chrome in front on it.",
+        hint=(
+            f"In OBS, set the window capture '{ctx.capture}' to the 'Windows 10' capture method."
+            if ctx.capture_mode == "window"
+            else "In OBS, point the display capture at the virtual screen, and keep Chrome in front on it."
+        ),
     )
 
 

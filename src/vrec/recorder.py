@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
@@ -11,7 +13,7 @@ from typing import cast
 import obsws_python as obs
 from playwright.sync_api import Page
 
-from vrec import history
+from vrec import history, obs_scene
 from vrec.browser import document_script, load_js, route_audio_to
 from vrec.config import Settings
 from vrec.console import ProgressLine, human_duration, warn
@@ -82,9 +84,17 @@ class _ObsCapture:
     """OBS as seen by the playback loop."""
 
     def __init__(
-        self, client: obs.ReqClient, scene: str, settings: Settings, meter: AudioMeter | None
+        self,
+        client: obs.ReqClient,
+        scene: str,
+        settings: Settings,
+        meter: AudioMeter | None,
+        follow: Callable[[], object] | None = None,
     ) -> None:
         self._client, self._scene, self._settings, self._meter = client, scene, settings, meter
+        # Called with each liveness check: keeps a window capture on the Chrome window when the
+        # page changes its title during playback.
+        self._follow = follow
 
     def pause(self) -> None:
         self._client.pause_record()
@@ -99,6 +109,9 @@ class _ObsCapture:
         return self._meter.peak if self._meter else None
 
     def recording(self) -> bool | None:
+        if self._follow is not None:
+            with contextlib.suppress(Exception):
+                self._follow()
         try:
             return bool(self._client.get_record_status().output_active)
         except Exception:
@@ -118,6 +131,7 @@ def record_one(
     title: str | None,
     test_mode: bool,
     max_height: int = 0,
+    window_capture: str | None = None,
 ) -> RecordingResult:
     result = RecordingResult(number=number)
     print(f"[{number}/{total}] {title or url}")
@@ -176,6 +190,16 @@ def record_one(
             for address in page.evaluate(load_js("player_requests.js")):
                 print(f"     {address}")
 
+    follow = None
+    if window_capture:
+        # Window capture: point it at this page's Chrome window (its title changes with every page).
+        page_title = page.title()
+        if not obs_scene.target_window(client, window_capture, page_title):
+            warn(f"OBS can't find the Chrome window '{page_title}': the recording may be black.")
+
+        def follow() -> None:
+            obs_scene.target_window(client, window_capture, page.title())
+
     client.start_record()
     page.wait_for_timeout(int(settings.lead_in_s * 1000))
     if meter:
@@ -202,7 +226,7 @@ def record_one(
     line = ProgressLine()
     outcome = watch(
         _PagePlayer(page),
-        _ObsCapture(client, scene, settings, meter),
+        _ObsCapture(client, scene, settings, meter, follow),
         config,
         Output(warn=warn, progress=line.show, end_progress=line.end),
     )

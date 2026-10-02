@@ -723,3 +723,39 @@ def test_virtual_screen_smaller_than_the_obs_canvas_warns(
     )
     check = doctor.check_virtual_screen(ctx)
     assert check.status == "warn" and "upscaled" in check.detail
+
+
+# check_scene_capture: hidden sources and window capture ([obs] capture)
+
+
+def _scene_ctx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, items: list[dict], mode: str = "screen"):
+    ctx = _ctx(tmp_path, FakeClient(scene_items=items), monkeypatch)
+    ctx.settings = Settings(obs_capture=mode)
+    monkeypatch.setattr(doctor.obs_scene, "scene_names", lambda client: ["vrec"])
+    return ctx
+
+
+def test_scene_capture_hidden_own_is_shown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    items = [
+        {"inputKind": "monitor_capture", "sourceName": "vrec screen", "sceneItemEnabled": False},
+        {"inputKind": "window_capture", "sourceName": "my window", "sceneItemEnabled": True},
+    ]
+    check = doctor.check_scene_capture(_scene_ctx(tmp_path, monkeypatch, items))
+    assert check.status == "info"
+    assert "'vrec screen' is hidden" in check.detail and "'my window'" in check.detail
+
+
+def test_scene_capture_other_visible_source_warns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    items = [
+        {"inputKind": "window_capture", "sourceName": "chrome", "sceneItemEnabled": True},
+        {"inputKind": "monitor_capture", "sourceName": "vrec screen", "sceneItemEnabled": True},
+    ]
+    check = doctor.check_scene_capture(_scene_ctx(tmp_path, monkeypatch, items, "window"))
+    assert check.status == "warn"
+    assert "Records 'chrome' (window capture)" in check.detail and "'vrec screen'" in check.detail
+
+
+def test_scene_capture_window_is_added(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    items = [{"inputKind": "monitor_capture", "sourceName": "vrec screen", "sceneItemEnabled": False}]
+    check = doctor.check_scene_capture(_scene_ctx(tmp_path, monkeypatch, items, "window"))
+    assert check.status == "info" and "add a window capture" in check.detail

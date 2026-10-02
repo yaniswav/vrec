@@ -14,6 +14,10 @@ never starts a recording or changes OBS/Chrome state (beyond, like a normal run,
 OBS WebSocket password the first time it's typed in), so it's safe to run at any time, including while
 a normal run is waiting at its "press Enter to start" prompt.
 
+The `Capture source` check tells which source vrec will record from in its scene, following
+`[obs] capture`: `[ OK ]` with its name, `[WARN]` if another visible capture in that scene would be
+recorded too, `[INFO]` if vrec will create, add or show its own capture on the next run.
+
 ## Pre-flight check
 
 With the `preflight_check` feature on (the default), vrec runs an end-to-end check right before the
@@ -54,6 +58,12 @@ screen must show each one.
 - `[FAIL] OBS sees Chrome: '<capture>' doesn't show the Chrome window`
   -> In OBS, point the display capture at the virtual screen, and keep Chrome in front on it.
 
+  With `[obs] capture = "window"`, the hint is instead: `In OBS, set the window capture '<capture>' to
+  the 'Windows 10' capture method.` The older BitBlt method shows a black image with Chrome.
+- `[FAIL] OBS sees Chrome: OBS can't find the recording Chrome window` (window mode only): OBS's list
+  of windows has no Chrome window titled "vrec check", the test page's title.
+  -> Open it with launch_chrome.bat, and keep it a normal Chrome window (not minimized).
+
   With `obs_scene` off, vrec can't retarget your scene's capture itself: point it at the virtual
   screen by hand (see [setup-windows.md](setup-windows.md#4-obs)).
 
@@ -92,11 +102,25 @@ Printed while vrec creates or reuses its own OBS scene, just before the pre-flig
 - `Created the OBS scene '<scene>' with a display capture '<capture>'.` First use: the scene didn't
   exist yet, so vrec created it.
 - `Added a display capture '<capture>' to the OBS scene '<scene>'.` The scene already existed (for
-  example one you built by hand) but had no display capture, so vrec added just that; anything else
-  already in the scene (a crop filter for 360 videos, say) is left untouched.
+  example one you built by hand) but had no visible display capture, so vrec added just that; anything
+  else already in the scene (a crop filter for 360 videos, say) is left untouched.
+- `Showed '<capture>' in the OBS scene '<scene>' (it was hidden).` vrec's own capture was in the scene
+  but hidden (eye icon off in OBS), so it would have recorded a black image: vrec made it visible.
 
-Neither message is a problem: recording continues normally. Nothing is printed when the scene already
+With `[obs] capture = "window"`, the first two say `window capture` instead of `display capture`.
+None of these is a problem: recording continues normally. Nothing is printed when the scene already
 had everything it needed.
+
+- `The OBS scene '<scene>' also shows '<source>': it is recorded too. Hide it in OBS if that's not
+  intended.` Another visible display, window or game capture sits in the same scene, so it ends up in
+  the video too, on top of or under vrec's capture. Hide it (eye icon) or remove it from that scene.
+
+In window mode, before each video:
+
+- `OBS can't find the Chrome window '<title>': the recording may be black.` OBS's list of windows has
+  no Chrome window with that page's title. Check that the recording Chrome window isn't minimized,
+  and that the window capture uses the "Windows 10" capture method. vrec tries again during playback,
+  in case the page changes its title.
 
 After the batch, and after Ctrl+C, vrec switches OBS back to the scene you were on:
 

@@ -48,6 +48,10 @@ Initial public release.
 - `obs_scene` feature: records from vrec's own OBS scene instead of whatever scene is current, creating
   it with a display capture if it's missing (reusing an existing scene as is otherwise, so a crop
   filter for 360 videos stays), and switching back to the previous scene afterwards.
+- Screen or window capture (`[obs] capture`): record the whole virtual screen, or only the recording
+  Chrome window through a window capture that vrec points at the right window before each video.
+  A hidden capture is never recorded from: vrec shows its own, and warns about other visible captures
+  in its scene.
 - `auto_start_obs` and `auto_start_chrome` features: start OBS and the recording Chrome themselves if
   they aren't already open when a recording, `--test`, or scheduled run begins, and leave them open
   afterwards.

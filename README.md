@@ -95,7 +95,14 @@ Checking everything before recording...
   stays. Its own VB-CABLE audio source is added to it too. OBS switches to it for the batch and back to
   the scene you were on afterwards, also after Ctrl+C, and on the next start if vrec was killed before
   it could switch back. Your other scenes, and OBS's global settings (resolution, encoder), are never
-  touched.
+  touched. Hidden sources don't count: if vrec's own capture was hidden in the scene, vrec shows it
+  again, and it warns when another visible capture in the scene would be recorded too.
+- **Screen or window capture** (`[obs] capture`, default `"screen"`): `"screen"` records the whole
+  virtual screen through a display capture. `"window"` records only the recording Chrome window through
+  a window capture ("`<scene>` window", "Windows 10" capture method, cursor hidden). The window's title
+  changes with every page, so vrec points the capture at the right Chrome window before each video and
+  keeps it on it during playback; it only ever matches that exact window, never your usual Chrome.
+  A visible window capture you already added to the scene is used instead of creating one.
 - **Pre-flight check** (feature `preflight_check`): right before the first video of every batch, and in
   `--test` mode, vrec opens a small local test page (served from `http://127.0.0.1`) in the recording
   Chrome and checks the whole chain end to end: the virtual screen is present; Chrome is on it and
@@ -241,7 +248,7 @@ run. A run with no keyboard (`--all` from a scheduled task, for instance) can't 
 ### Diagnosing your setup: `vrec --doctor`
 
 Runs every check without recording anything: the playlist and config files, feature toggles, the OBS
-connection/version/output settings, free disk space, the display capture source, VB-CABLE, how the
+connection/version/output settings, free disk space, the capture source, VB-CABLE, how the
 video's sound is routed, Chrome's debug port, and which screen recording will use. Each line is
 `[ OK ]`, `[WARN]`, `[FAIL]` or `[INFO]`, with a `->` hint for anything that isn't `[ OK ]`. Exits with
 a non-zero code if any check failed. Run it first whenever something looks wrong, and include its
@@ -288,7 +295,8 @@ is optional; a missing file or key falls back to the default shown below.
 | `[obs]` | `audio_source_name` | `Chrome Audio (VB-CABLE)` | Name of the OBS audio input source that carries Chrome's sound; created automatically if missing. |
 | `[obs]` | `path` | (empty) | Path to `obs64.exe`, if vrec can't find it itself (feature `auto_start_obs`). Empty = look in the registry, then the default install location. |
 | `[obs]` | `start_timeout` | `60` | Seconds to wait for OBS's WebSocket server to answer after starting it (feature `auto_start_obs`). |
-| `[obs]` | `scene` | `vrec` | Name of the OBS scene vrec records from (feature `obs_scene`); created automatically, with a display capture, if it doesn't already exist. |
+| `[obs]` | `scene` | `vrec` | Name of the OBS scene vrec records from (feature `obs_scene`); created automatically, with a display or window capture, if it doesn't already exist. |
+| `[obs]` | `capture` | `screen` | What OBS records: `screen` (display capture of the virtual screen) or `window` (window capture of the recording Chrome window). |
 | `[chrome]` | `debug_port` | `9222` | Remote debugging port Chrome was started with (see `launch_chrome.bat`). |
 | `[chrome]` | `path` | (empty) | Path to `chrome.exe`, if vrec can't find it itself (feature `auto_start_chrome`). Empty = look in the standard install locations, then the registry. |
 | `[chrome]` | `profile` | (empty) | Chrome profile directory used when vrec starts the recording Chrome itself (feature `auto_start_chrome`). Empty = `VREC_CHROME_PROFILE`, then `%LocalAppData%\vrec\chrome-profile` (same as `launch_chrome.bat`). |

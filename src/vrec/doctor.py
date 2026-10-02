@@ -256,34 +256,57 @@ def check_resolution(ctx: _Context) -> Check:
 
 
 def check_scene_capture(ctx: _Context) -> Check:
-    """Display capture source."""
+    """The source vrec records from: a display or a window capture ([obs] capture)."""
+    title = "Capture source"
     client = ctx.client()
     if client is None:
-        return _skip("Display capture source")
-    if ctx.features.enabled("obs_scene"):
+        return _skip(title)
+    mode = ctx.settings.obs_capture
+    kind = obs_scene.CAPTURE_MODES[mode]
+    label = "window capture" if mode == "window" else "display capture"
+    own_scene = ctx.features.enabled("obs_scene")
+    if own_scene:
         scene = ctx.settings.obs_scene_name
         if scene not in obs_scene.scene_names(client):
             return Check(
-                "info",
-                "Display capture source",
-                detail=f"vrec will create its scene '{scene}' with a display capture on the first run.",
+                "info", title, detail=f"vrec will create its scene '{scene}' with a {label} on the first run."
             )
     else:
         scene = obs_control.current_scene(client)
     items = client.get_scene_item_list(scene).scene_items
-    if any(item.get("inputKind") == "monitor_capture" for item in items):
-        return Check("ok", "Display capture source", detail=f"Found in scene '{scene}'.")
-    if ctx.features.enabled("obs_scene"):
-        return Check(
-            "info",
-            "Display capture source",
-            detail=f"vrec will add a display capture to its scene '{scene}'.",
-        )
+    same_kind = [i for i in items if i.get("inputKind") == kind]
+    visible = [i for i in same_kind if i.get("sceneItemEnabled", True)]
+    recorded = visible[0].get("sourceName", "") if visible else None
+    others = [
+        i.get("sourceName", "")
+        for i in items
+        if i.get("inputKind") in obs_scene.PICTURE_KINDS
+        and i.get("sceneItemEnabled", True)
+        and i.get("sourceName", "") != recorded
+    ]
+    also = f" Also visible, so recorded too: {', '.join(repr(o) for o in others)}." if others else ""
+    if recorded:
+        detail = f"Records '{recorded}' ({label}) in scene '{scene}'.{also}"
+        if others:
+            return Check(
+                "warn", title, detail=detail, hint="Hide the other sources in OBS if that's not intended."
+            )
+        return Check("ok", title, detail=detail)
+    if own_scene:
+        own = f"{scene} {mode}"
+        if any(i.get("sourceName", "") == own for i in same_kind):
+            return Check(
+                "info", title, detail=f"'{own}' is hidden in scene '{scene}': vrec will show it.{also}"
+            )
+        return Check("info", title, detail=f"vrec will add a {label} to its scene '{scene}'.{also}")
     return Check(
         "warn",
-        "Display capture source",
-        detail=f"No display capture source in scene '{scene}'.",
-        hint="Add a Display Capture source to that scene.",
+        title,
+        detail=f"No visible {label} in scene '{scene}'.",
+        hint=(
+            f"Add a {'Window' if mode == 'window' else 'Display'} Capture source to that scene, "
+            "or change [obs] capture."
+        ),
     )
 
 

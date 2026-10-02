@@ -47,7 +47,7 @@ def make_batch(tmp_path: Path, client: FakeClient, **features: bool) -> app.Batc
 @pytest.fixture
 def scene_created(monkeypatch):  # noqa: ANN201
     setup = SceneSetup("vrec", "vrec screen", created_scene=True, created_capture=True)
-    monkeypatch.setattr(app.obs_scene, "ensure_scene", lambda client, name: setup)
+    monkeypatch.setattr(app.obs_scene, "ensure_scene", lambda client, name, mode="screen": setup)
     return setup
 
 

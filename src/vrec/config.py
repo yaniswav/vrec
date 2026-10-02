@@ -20,6 +20,7 @@ class Settings:
     obs_path: str = ""
     obs_start_timeout_s: float = 60
     obs_scene_name: str = "vrec"
+    obs_capture: str = "screen"
     chrome_port: int = 9222
     chrome_path: str = ""
     chrome_profile: str = ""
@@ -87,6 +88,7 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
         "path": ("obs_path", str),
         "start_timeout": ("obs_start_timeout_s", float),
         "scene": ("obs_scene_name", str),
+        "capture": ("obs_capture", str),
     },
     "chrome": {
         "debug_port": ("chrome_port", int),
@@ -152,6 +154,8 @@ def load_settings(path: Path | None) -> Settings:
             field_name, field_type = field
             values[field_name] = _coerce(section, key, value, field_type)
 
+    if values.get("obs_capture", "screen") not in ("screen", "window"):
+        raise VrecError('Invalid value for [obs] capture: expected "screen" or "window"')
     return Settings(**values)
 
 

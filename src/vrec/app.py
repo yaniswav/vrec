@@ -77,6 +77,7 @@ class Batch:
     virtual_screen: display.Screen | None = None  # the screen this run turned on
     capture: str = ""  # vrec's display capture source (obs_scene feature)
     previous_scene: str | None = None  # program scene to switch back to
+    capture_mode: str = "screen"  # what `capture` is: "screen" or "window"
     interactive: bool = False
     kept_awake: bool = False  # this run asked Windows not to sleep
     started_at: float = field(default_factory=time.time)
@@ -288,15 +289,25 @@ def _prepare_scene(batch: Batch) -> None:
         return
     assert batch.client is not None
     name = batch.settings.obs_scene_name
-    setup = obs_scene.ensure_scene(batch.client, name)
+    mode = batch.settings.obs_capture
+    label = "window capture" if mode == "window" else "display capture"
+    setup = obs_scene.ensure_scene(batch.client, name, mode)
     if setup.created_scene:
-        print(f"Created the OBS scene '{name}' with a display capture '{setup.capture}'.")
+        print(f"Created the OBS scene '{name}' with a {label} '{setup.capture}'.")
     elif setup.created_capture:
-        print(f"Added a display capture '{setup.capture}' to the OBS scene '{name}'.")
+        print(f"Added a {label} '{setup.capture}' to the OBS scene '{name}'.")
+    elif setup.shown_capture:
+        print(f"Showed '{setup.capture}' in the OBS scene '{name}' (it was hidden).")
+    if setup.also_visible:
+        others = ", ".join(f"'{source}'" for source in setup.also_visible)
+        warn(
+            f"The OBS scene '{name}' also shows {others}: it is recorded too. "
+            "Hide it in OBS if that's not intended."
+        )
     # Written before switching, so a killed run still gets its scene back on the next start.
     batch.paths.obs_scene_restore.write_text(obs_control.current_scene(batch.client), encoding="utf-8")
     batch.previous_scene = obs_scene.switch_to(batch.client, name)
-    batch.scene, batch.capture = name, setup.capture
+    batch.scene, batch.capture, batch.capture_mode = name, setup.capture, mode
 
 
 def _restore_scene(batch: Batch) -> None:
@@ -324,7 +335,8 @@ def _preflight(batch: Batch) -> None:
         browser=batch.browser,
         client=batch.client,
         capture=batch.capture or batch.scene,
-        can_retarget=bool(batch.capture),
+        can_retarget=bool(batch.capture) and batch.capture_mode == "screen",
+        capture_mode=batch.capture_mode if batch.capture else "screen",
         screen=screen,
         meter=batch.meter,
         audio_output=batch.settings.audio_output if batch.features.enabled("audio_sink") else "",
@@ -565,6 +577,9 @@ def _record_one_with_retry(
     batch: Batch, number: int, total: int, url: str, title: str | None, record: RecordFn
 ) -> tuple[RecordingResult, bool]:
     """Record one video, retrying once at a lower quality if it stalled (quality_retry)."""
+    window: dict[str, str] = {}
+    if batch.capture and batch.capture_mode == "window":
+        window["window_capture"] = batch.capture
     try:
         result = record(
             batch.page,
@@ -579,6 +594,7 @@ def _record_one_with_retry(
             title,
             batch.test_mode,
             batch.settings.max_height,
+            **window,
         )
         if batch.features.enabled("quality_retry"):
             retry_cap = lower_quality_retry_cap(result, batch.test_mode)
@@ -598,6 +614,7 @@ def _record_one_with_retry(
                     title,
                     batch.test_mode,
                     retry_cap,
+                    **window,
                 )
         return result, False
     except Exception as e:

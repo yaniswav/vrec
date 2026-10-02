@@ -311,3 +311,27 @@ def test_stop_failure_for_another_reason_is_not_masked(tmp_path, patched, monkey
     monkeypatch.setattr(FakeObs, "stop_record", boom)
     with pytest.raises(RuntimeError, match="socket closed"):
         run_with_outcome(tmp_path, monkeypatch, StopReason.ENDED)
+
+
+def test_window_capture_follows_the_page_title(tmp_path, patched, monkeypatch, capsys):
+    targeted: list[str] = []
+    monkeypatch.setattr(
+        recorder.obs_scene, "target_window", lambda client, capture, title: targeted.append(title) or True
+    )
+    result, client = run(tmp_path, FakePage(duration=70, title="Clip | Site"), window_capture="vrec window")
+    assert result.reason == "ended"
+    assert targeted[0] == "Clip | Site"  # pointed before the recording starts
+    assert len(targeted) > 1  # and again with the liveness checks
+    assert "can't find the Chrome window" not in capsys.readouterr().out
+
+
+def test_window_capture_warns_when_obs_cant_see_the_window(tmp_path, patched, monkeypatch, capsys):
+    monkeypatch.setattr(recorder.obs_scene, "target_window", lambda client, capture, title: False)
+    run(tmp_path, FakePage(title="Clip | Site"), window_capture="vrec window")
+    assert "OBS can't find the Chrome window 'Clip | Site'" in capsys.readouterr().out
+
+
+def test_screen_capture_never_touches_windows(tmp_path, patched, monkeypatch):
+    monkeypatch.setattr(recorder.obs_scene, "target_window", lambda *a: pytest.fail("screen mode"))
+    result, _ = run(tmp_path, FakePage())
+    assert result.reason == "ended"
