@@ -22,7 +22,7 @@ import obsws_python as obs
 from PIL import Image
 from playwright.sync_api import Browser, Page
 
-from vrec import obs_scene
+from vrec import obs_scene, vdesktop
 from vrec.browser import get_window_bounds, load_js, microphone_permission, origin_of
 from vrec.display import Screen, smaller_than
 from vrec.obs_control import AudioMeter
@@ -143,6 +143,8 @@ class Context:
     wait: Callable[[float], None] = time.sleep
     scene: str = ""  # the scene being recorded ("" skips the check for other visible captures)
     capture_mode: str = "screen"  # "window": `capture` is a window capture to point at Chrome
+    chrome_hwnd: int | None = None  # the recording Chrome window (None: not found)
+    pin_desktops: bool = False  # feature pin_all_desktops
 
 
 def check_screen(ctx: Context) -> CheckResult:
@@ -180,6 +182,18 @@ def check_window(ctx: Context) -> CheckResult:
     if b.state != "fullscreen":
         return CheckResult(False, title, f"on {ctx.screen.name} but not fullscreen ({b.state})")
     return CheckResult(True, title, f"on {ctx.screen.name}, fullscreen")
+
+
+def check_desktops(ctx: Context) -> CheckResult:
+    """Chrome should be shown on all virtual desktops. Never blocks the batch: pinning is a convenience."""
+    title = "Virtual desktops"
+    if not ctx.pin_desktops:
+        return CheckResult(None, title, "pin_all_desktops is off: stay on Chrome's desktop while recording")
+    if ctx.chrome_hwnd is None:
+        return CheckResult(None, title, "Chrome window not found: stay on its desktop while recording")
+    if vdesktop.is_pinned(ctx.chrome_hwnd):
+        return CheckResult(True, title, "Chrome is shown on all desktops")
+    return CheckResult(None, title, "Chrome isn't shown on all desktops: stay on its desktop while recording")
 
 
 def check_capture(ctx: Context) -> CheckResult:
@@ -258,7 +272,13 @@ def check_sound(ctx: Context) -> CheckResult:
     return CheckResult(False, title, "OBS heard nothing", hint=hint)
 
 
-CHECKS: list[Callable[[Context], CheckResult]] = [check_screen, check_window, check_capture, check_sound]
+CHECKS: list[Callable[[Context], CheckResult]] = [
+    check_screen,
+    check_window,
+    check_desktops,
+    check_capture,
+    check_sound,
+]
 
 
 def run_checks(

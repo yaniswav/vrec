@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Working on another virtual desktop while recording (feature `pin_all_desktops`): vrec shows the
+  recording Chrome window on all virtual desktops (through `pyvda`, a new dependency) and puts it back
+  afterwards, so switching desktops no longer makes OBS film the wallpaper. A new pre-flight line
+  reports it, and a warning with the manual steps appears if it can't be done.
+- `[obs] capture_cursor` (default `false`): whether vrec's own OBS capture films the mouse cursor. Capture
+  sources you made yourself are never changed.
+
 ### Fixed
 
 - A Chrome tab closed or replaced while vrec waited for Enter (or between two videos) no longer ends the

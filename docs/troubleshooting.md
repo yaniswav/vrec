@@ -46,6 +46,13 @@ detail, and, for a failing check, a `->` hint.
   check, so seeing this on a stale window usually isn't a real problem.
 - `[ OK ] Chrome window: on <screen>, fullscreen`
 
+### Virtual desktops
+
+- `[ OK ] Virtual desktops: Chrome is shown on all desktops`
+- `[SKIP] Virtual desktops: ...`: this never blocks the batch. It means Chrome isn't shown on all
+  desktops (the feature `pin_all_desktops` is off, the window wasn't found, or Windows refused), so stay
+  on Chrome's virtual desktop while recording. See [Virtual desktops](#virtual-desktops-1) below.
+
 ### OBS sees Chrome
 
 The test page fills the screen with two solid, unusual colors in turn, and OBS's capture of that
@@ -406,6 +413,23 @@ quality just below the one that stalled. If that retry finishes normally, its fi
 and is what counts; the incomplete file from the first attempt is left on disk alongside it. If the
 retry also fails to finish (for any reason), the video is renamed `INCOMPLETE - <title>` and marked
 failed, so it comes back up under "Record everything" for a further, fully manual attempt.
+
+## Virtual desktops
+
+### "Chrome is shown on all virtual desktops while recording: you can switch desktops."
+
+Windows virtual desktops span every screen, so switching desktops makes the virtual screen show the
+other desktop and OBS films the wallpaper instead of Chrome. vrec avoids this by pinning the recording
+Chrome window ("Show this window on all desktops", feature `pin_all_desktops`) before the first video and
+unpinning it at the end, also after Ctrl+C. A window you had pinned yourself is left pinned.
+
+### "Couldn't show Chrome on all virtual desktops (<reason>). To switch desktops while recording: ..."
+
+Pinning didn't work (`window not found`, `Windows refused`, or `virtual desktop support unavailable`;
+the last two come from the `pyvda` library, which relies on Windows internals that can change with an
+update). Recording goes on, but don't switch desktops. To do it by hand: press Win+Tab, right-click the
+Chrome window, and choose "Show this window on all desktops". Your mouse cursor is not filmed by default
+(`[obs] capture_cursor = false`), so moving it across the virtual screen doesn't show up in the video.
 
 ## Batches
 

@@ -130,7 +130,8 @@ def test_existing_scene_without_capture_gets_one(fake):
 def test_reuses_a_leftover_capture_input(fake):
     fake.inputs["vrec screen"] = {"kind": "monitor_capture", "settings": {"monitor_id": "id-virtual"}}
     obs_scene.ensure_scene(fake, "vrec")
-    assert fake.inputs["vrec screen"]["settings"] == {"monitor_id": "id-virtual"}  # not recreated
+    # not recreated (its monitor is kept); only the cursor setting is applied
+    assert fake.inputs["vrec screen"]["settings"] == {"monitor_id": "id-virtual", "capture_cursor": False}
     assert [i["sourceName"] for i in fake.scenes["vrec"]] == ["vrec screen"]
 
 

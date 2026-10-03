@@ -27,6 +27,10 @@ scene = "vrec"
 # window capture of the recording Chrome window only, so nothing else on that screen is filmed).
 # In window mode, vrec points the capture at the Chrome window before each video.
 capture = "screen"
+# Film the mouse cursor in vrec's own capture ("<scene> screen" / "<scene> window"). Off by default: your
+# mouse may cross onto the virtual screen while you work on another desktop. Capture sources you made
+# yourself in OBS are never changed.
+capture_cursor = false
 
 [chrome]
 # Remote debugging port Chrome was started with (see scripts/windows/launch_chrome.bat).

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import urllib.request
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -195,11 +196,37 @@ def make_ctx(chain: FakeChain, **overrides: Any) -> Context:
     return Context(**values)
 
 
-def test_everything_ok(chain):
-    results = preflight.run_checks(make_ctx(chain))
-    assert [r.ok for r in results] == [True, True, True, True]
+def test_everything_ok(chain, monkeypatch):
+    monkeypatch.setattr(preflight.vdesktop, "is_pinned", lambda hwnd: True)
+    results = preflight.run_checks(make_ctx(chain, pin_desktops=True, chrome_hwnd=42))
+    assert [r.ok for r in results] == [True, True, True, True, True]
+
+
+def test_desktops_check_ok_when_pinned(monkeypatch):
+    monkeypatch.setattr(preflight.vdesktop, "is_pinned", lambda hwnd: True)
+    ctx = make_ctx(SimpleNamespace(meter=None), pin_desktops=True, chrome_hwnd=42)
+    assert (
+        preflight.check_desktops(ctx).line() == "  [ OK ] Virtual desktops: Chrome is shown on all desktops"
+    )
+
+
+@pytest.mark.parametrize(
+    ("pin_desktops", "hwnd", "pinned"),
+    [(False, 42, True), (True, None, None), (True, 42, False), (True, 42, None)],
+)
+def test_desktops_check_never_fails(monkeypatch, pin_desktops, hwnd, pinned):
+    monkeypatch.setattr(preflight.vdesktop, "is_pinned", lambda h: pinned)
+    ctx = make_ctx(SimpleNamespace(meter=None), pin_desktops=pin_desktops, chrome_hwnd=hwnd)
+    result = preflight.check_desktops(ctx)
+    assert result.ok is None  # a skip, never a failure
+    assert result.detail
+
+
+def test_everything_ok_details(chain, monkeypatch):
+    monkeypatch.setattr(preflight.vdesktop, "is_pinned", lambda hwnd: True)
+    results = preflight.run_checks(make_ctx(chain, pin_desktops=True, chrome_hwnd=42))
     assert chain.url.startswith("http://127.0.0.1:")
-    assert "CABLE Input" in results[3].detail
+    assert "CABLE Input" in results[4].detail
 
 
 def test_no_virtual_screen(chain):

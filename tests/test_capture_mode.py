@@ -202,7 +202,7 @@ def make_batch(tmp_path: Path, **settings: Any) -> app.Batch:
 
 def test_prepare_scene_in_window_mode_reports_what_it_did(tmp_path, monkeypatch, capsys):
     setup = obs_scene.SceneSetup("vrec", "vrec screen", shown_capture=True)
-    monkeypatch.setattr(app.obs_scene, "ensure_scene", lambda client, name, mode: setup)
+    monkeypatch.setattr(app.obs_scene, "ensure_scene", lambda client, name, mode, cursor=False: setup)
     monkeypatch.setattr(app.obs_scene, "switch_to", lambda client, name: "Main")
     monkeypatch.setattr(app.obs_control, "current_scene", lambda client: "Main")
     batch = make_batch(tmp_path)
