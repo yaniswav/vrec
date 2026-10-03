@@ -750,7 +750,9 @@ def test_scene_capture_other_visible_source_warns(tmp_path: Path, monkeypatch: p
         {"inputKind": "window_capture", "sourceName": "chrome", "sceneItemEnabled": True},
         {"inputKind": "monitor_capture", "sourceName": "vrec screen", "sceneItemEnabled": True},
     ]
-    check = doctor.check_scene_capture(_scene_ctx(tmp_path, monkeypatch, items, "window"))
+    ctx = _scene_ctx(tmp_path, monkeypatch, items, "window")
+    ctx.features.set("obs_scene", False)
+    check = doctor.check_scene_capture(ctx)
     assert check.status == "warn"
     assert "Records 'chrome' (window capture)" in check.detail and "'vrec screen'" in check.detail
 

@@ -15,8 +15,8 @@ OBS WebSocket password the first time it's typed in), so it's safe to run at any
 a normal run is waiting at its "press Enter to start" prompt.
 
 The `Capture source` check tells which source vrec will record from in its scene, following
-`[obs] capture`: `[ OK ]` with its name, `[WARN]` if another visible capture in that scene would be
-recorded too, `[INFO]` if vrec will create, add or show its own capture on the next run.
+`[obs] capture`: `[ OK ]` with its name, `[INFO]` if another visible capture in that scene will be hidden by vrec
+while it records (with `obs_scene` off, `[WARN]` instead: it would be recorded too), `[INFO]` if vrec will create, add or show its own capture on the next run.
 
 ## Pre-flight check
 
@@ -63,6 +63,10 @@ screen must show each one.
 - `[FAIL] OBS sees Chrome: OBS can't find the recording Chrome window` (window mode only): OBS's list
   of windows has no Chrome window titled "vrec check", the test page's title.
   -> Open it with launch_chrome.bat, and keep it a normal Chrome window (not minimized).
+
+- `[FAIL] OBS sees Chrome: '<source>' is also visible in the scene and would be recorded over Chrome`
+  -> Hide it in OBS (eye icon), or remove it from that scene. With `obs_scene` on, vrec hides such
+  sources itself, so this means hiding failed. With `obs_scene` off, vrec never changes your scene.
 
   With `obs_scene` off, vrec can't retarget your scene's capture itself: point it at the virtual
   screen by hand (see [setup-windows.md](setup-windows.md#4-obs)).
@@ -111,9 +115,14 @@ With `[obs] capture = "window"`, the first two say `window capture` instead of `
 None of these is a problem: recording continues normally. Nothing is printed when the scene already
 had everything it needed.
 
-- `The OBS scene '<scene>' also shows '<source>': it is recorded too. Hide it in OBS if that's not
-  intended.` Another visible display, window or game capture sits in the same scene, so it ends up in
-  the video too, on top of or under vrec's capture. Hide it (eye icon) or remove it from that scene.
+- `Hid '<source>' in the OBS scene '<scene>' while recording (shown again afterwards).` Another
+  visible display, window or game capture sat in the same scene and would have ended up in the video,
+  on top of or under vrec's capture. vrec hides it for the batch and shows it again at the end, also
+  after Ctrl+C. Nothing to do.
+- `Showed again '<source>' in the OBS scene '<scene>', hidden by an interrupted run.` Printed at the
+  next start: vrec was killed while it had hidden that capture, and it has now shown it again.
+- `Couldn't show the sources hidden in the OBS scene '<scene>' again: ...` OBS refused. Show the
+  source yourself (eye icon in OBS); vrec tries again at the next start.
 
 In window mode, before each video:
 

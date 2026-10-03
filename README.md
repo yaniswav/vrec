@@ -96,7 +96,9 @@ Checking everything before recording...
   the scene you were on afterwards, also after Ctrl+C, and on the next start if vrec was killed before
   it could switch back. Your other scenes, and OBS's global settings (resolution, encoder), are never
   touched. Hidden sources don't count: if vrec's own capture was hidden in the scene, vrec shows it
-  again, and it warns when another visible capture in the scene would be recorded too.
+  again. Other visible captures in that scene would be recorded over Chrome, so vrec hides them while
+  it records and shows them again afterwards (also after Ctrl+C, and on the next start if vrec was
+  killed). If one is still visible, the pre-flight check fails.
 - **Screen or window capture** (`[obs] capture`, default `"screen"`): `"screen"` records the whole
   virtual screen through a display capture. `"window"` records only the recording Chrome window through
   a window capture ("`<scene>` window", "Windows 10" capture method, cursor hidden). The window's title

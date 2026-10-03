@@ -75,6 +75,10 @@ class Paths:
         return self.data_dir / "obs_restore_scene.txt"
 
     @property
+    def obs_restore_sources(self) -> Path:
+        return self.data_dir / "obs_restore_sources.json"
+
+    @property
     def features(self) -> Path:
         return self.data_dir / "features.toml"
 
