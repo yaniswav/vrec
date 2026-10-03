@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A Chrome tab closed or replaced while vrec waited for Enter (or between two videos) no longer ends the
+  run with "Target page, context or browser has been closed": vrec switches to another tab.
+
 ## [0.1.0] - 2026-10-01
 
 Initial public release.

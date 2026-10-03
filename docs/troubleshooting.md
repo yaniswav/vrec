@@ -164,6 +164,12 @@ whole file) to a bug report.
 Chrome must be opened with `scripts\windows\launch_chrome.bat`, not with its normal desktop icon or
 taskbar shortcut. That script opens Chrome with the DevTools port vrec needs to control it.
 
+### "The Chrome tab vrec was using was closed: using another one."
+
+The tab vrec had picked was closed or replaced (for example while you logged in, before pressing Enter,
+or between two videos). vrec switched to the most recent open tab, or opened a new one, and carries on.
+Nothing needs doing.
+
 ### "Chrome is ready. Log in to the site in that window if needed, then run start.bat or test.bat."
 
 Printed by `scripts\windows\launch_chrome.bat` (`vrec --launch-chrome`) once the recording Chrome is

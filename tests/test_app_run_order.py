@@ -61,7 +61,7 @@ class Harness:
         def connect(port: int, quality_filter: bool = True, audio_sink: bool = True):  # type: ignore[no-untyped-def]
             order.append("browser connection")
             try:
-                yield "browser", "page"
+                yield SimpleNamespace(is_connected=lambda: True), SimpleNamespace(is_closed=lambda: False)
             finally:
                 order.append("browser closed")
 

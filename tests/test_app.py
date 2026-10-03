@@ -187,8 +187,8 @@ def test_exception_stops_obs_and_renames_interrupted(tmp_path: Path) -> None:
 
 
 def test_lost_chrome_stops_batch(tmp_path: Path) -> None:
-    page = FakePage(closed=True)
-    batch = make_batch(tmp_path, page=page)
+    page = FakePage()
+    batch = make_batch(tmp_path, page=page, browser=FakeBrowser(connected=False))
     record = make_record([RuntimeError("boom"), make_result(), make_result()])
     selection = [("https://x/1", "V1"), ("https://x/2", "V2"), ("https://x/3", "V3")]
 
@@ -221,9 +221,15 @@ def test_three_errors_in_a_row_stops(tmp_path: Path) -> None:
 
 
 def test_circuit_breaker_off_continues_through_errors_and_lost_connections(tmp_path: Path) -> None:
-    page = FakePage(closed=True)
+    page = FakePage()
     client = FakeClient(alive=False)
-    batch = make_batch(tmp_path, page=page, client=client, features=FeatureSet({"circuit_breaker": False}))
+    batch = make_batch(
+        tmp_path,
+        page=page,
+        browser=FakeBrowser(connected=False),
+        client=client,
+        features=FeatureSet({"circuit_breaker": False}),
+    )
     record = make_record([RuntimeError("1"), RuntimeError("2"), RuntimeError("3"), RuntimeError("4")])
     selection = [(f"https://x/{i}", f"V{i}") for i in range(1, 5)]
 

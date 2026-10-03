@@ -27,6 +27,7 @@ from vrec.browser import (
     connect_browser,
     get_window_bounds,
     move_window_to,
+    pick_page,
     set_window_bounds,
     window_state,
 )
@@ -166,6 +167,7 @@ def _run_locked(
                 raise VrecError("An OBS recording started meanwhile. Stop it, then restart.")
 
             try:
+                _ensure_page(batch)
                 _prepare_window(batch)
                 _preflight(batch)
                 _record_batch(batch, selection)
@@ -501,10 +503,26 @@ def _restore_window(batch: Batch) -> None:
             window_state(batch.browser, batch.page, state)
 
 
+def _ensure_page(batch: Batch, redo_window: bool = False) -> None:
+    """Switch to another Chrome tab if the one vrec was using got closed (browser still connected)."""
+    # Set by `run()` before any step that touches the page is called.
+    assert batch.browser is not None and batch.page is not None
+    if not batch.browser.is_connected() or not batch.page.is_closed():
+        return
+    batch.page = pick_page(batch.browser, latest=True)
+    print("The Chrome tab vrec was using was closed: using another one.")
+    if redo_window:
+        # _prepare_window overwrites the saved window state with the already prepared one: keep the originals.
+        bounds, state = batch.initial_bounds, batch.initial_window_state
+        _prepare_window(batch)
+        batch.initial_bounds = bounds or batch.initial_bounds
+        batch.initial_window_state = state or batch.initial_window_state
+
+
 def _chrome_alive(batch: Batch) -> bool:
     # Set by `run()` before any step that checks Chrome's liveness is called.
-    assert batch.browser is not None and batch.page is not None
-    return not batch.page.is_closed() and batch.browser.is_connected()
+    assert batch.browser is not None
+    return batch.browser.is_connected()
 
 
 def _obs_alive(client: obs.ReqClient) -> bool:
@@ -542,6 +560,7 @@ def _record_batch(
     assert batch.page is not None
     error_streak = 0
     for i, (url, title) in enumerate(selection, 1):
+        _ensure_page(batch, redo_window=True)
         batch.current_title = history.display_title(batch.videos_history, url, title)
         if not _enough_disk_space(batch, free_bytes):
             batch.stopped_early = True
@@ -567,7 +586,8 @@ def _record_batch(
         else:
             error_streak = 0
 
-        batch.page.wait_for_timeout(3000)
+        if not batch.page.is_closed():
+            batch.page.wait_for_timeout(3000)
 
 
 def _enough_disk_space(batch: Batch, free_bytes: Callable[[str], int]) -> bool:

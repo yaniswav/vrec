@@ -42,10 +42,24 @@ def connect_browser(
             context.add_init_script(load_js("quality_filter.js"))
         if audio_sink:
             context.add_init_script(load_js("audio_contexts.js"))
-        pages = [pg for pg in context.pages if pg.url.startswith(("http", "about:blank", "chrome://newtab"))]
-        page = pages[0] if pages else context.new_page()
-        page.bring_to_front()
-        yield browser, page
+        yield browser, pick_page(browser)
+
+
+def pick_page(browser: Browser, latest: bool = False) -> Page:
+    """Choose the open tab vrec drives (the first usable one, or the newest with `latest`) and focus it.
+
+    Usable means an open http, about:blank or new-tab page. If there is none, a new tab is opened.
+    Init scripts live on the context, so they apply to whichever page is returned.
+    """
+    context = browser.contexts[0]
+    pages = [
+        pg
+        for pg in context.pages
+        if not pg.is_closed() and pg.url.startswith(("http", "about:blank", "chrome://newtab"))
+    ]
+    page = (pages[-1] if latest else pages[0]) if pages else context.new_page()
+    page.bring_to_front()
+    return page
 
 
 def window_state(browser: Browser, page: Page, state: str | None = None) -> str:
