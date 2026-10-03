@@ -19,6 +19,8 @@ from vrec.obs_control import (
     _AUDIO_SOURCE_KIND,
     AudioMeter,
     ObsUnreachable,
+    changed_fraction,
+    frame_signature,
     is_black_frame,
     prepare_audio,
     restore_mutes,
@@ -431,3 +433,41 @@ def test_stop_if_recording_warns_when_status_and_stop_both_fail(capsys: pytest.C
     assert obs_control.stop_if_recording(client) is None  # type: ignore[arg-type]
     assert client.stop_calls == 1
     assert "Couldn't stop the OBS recording" in capsys.readouterr().out
+
+
+def test_frame_signature_is_a_grayscale_byte_per_pixel() -> None:
+    client = FakeObsClient([], [], {}, {})
+    client.screenshot_data = _png_data_url(200)
+    sig = frame_signature(client, SCENE)
+    assert sig == bytes([200]) * (64 * 36)
+
+
+def test_frame_signature_none_on_failure() -> None:
+    client = FakeObsClient([], [], {}, {})
+    client.screenshot_should_fail = True
+    assert frame_signature(client, SCENE) is None
+    client.screenshot_should_fail = False
+    client.screenshot_data = "not an image"
+    assert frame_signature(client, SCENE) is None
+
+
+def test_changed_fraction_identical_images() -> None:
+    a = bytes(range(100))
+    assert changed_fraction(a, a) == 0.0
+
+
+def test_changed_fraction_ignores_small_noise() -> None:
+    a = bytes([100] * 100)
+    assert changed_fraction(a, bytes([108] * 100)) == 0.0
+    assert changed_fraction(a, bytes([111] * 100)) == 1.0
+
+
+def test_changed_fraction_counts_a_moving_region() -> None:
+    a = bytes([50] * 100)
+    b = bytes([50] * 90 + [200] * 10)
+    assert changed_fraction(a, b) == pytest.approx(0.1)
+
+
+def test_changed_fraction_size_mismatch_counts_as_changed() -> None:
+    assert changed_fraction(b"\x00" * 10, b"\x00" * 12) == 1.0
+    assert changed_fraction(b"", b"") == 1.0

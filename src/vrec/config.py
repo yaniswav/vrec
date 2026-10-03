@@ -31,6 +31,7 @@ class Settings:
     test_duration_s: float = 30
     black_level: int = 20
     abort_if_black_after_s: float = 60
+    abort_if_frozen_after_s: float = 180
     audio_level: float = 0.003
     pause_below_s: float = 2
     resume_at_s: float = 10
@@ -112,6 +113,7 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
     "checks": {
         "black_level": ("black_level", int),
         "abort_if_black_after": ("abort_if_black_after_s", float),
+        "abort_if_frozen_after": ("abort_if_frozen_after_s", float),
         "audio_level": ("audio_level", float),
     },
     "buffering": {

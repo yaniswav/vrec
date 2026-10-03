@@ -20,6 +20,7 @@ _RESERVED_NAMES = frozenset(
 # File name prefixes used by recorder.record_one() and app.py.
 TEST_PREFIX = "TEST"
 FAILED_BLACK_PREFIX = "FAILED black image"
+FAILED_FROZEN_PREFIX = "FAILED frozen image"
 INCOMPLETE_PREFIX = "INCOMPLETE"
 INTERRUPTED_PREFIX = "INTERRUPTED"  # recordings cut short by Ctrl+C or an error
 

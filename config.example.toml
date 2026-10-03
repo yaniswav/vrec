@@ -66,6 +66,9 @@ min_free_gb = 5
 black_level = 20
 # Give up on a video that stays black for this many seconds.
 abort_if_black_after = 60
+# Give up on a video whose picture stays frozen (OBS filming a still image while the video plays)
+# for this many seconds of playback.
+abort_if_frozen_after = 180
 # Minimum audio level to consider that there is sound (roughly -50 dB).
 audio_level = 0.003
 

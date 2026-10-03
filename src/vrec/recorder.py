@@ -20,8 +20,15 @@ from vrec.console import ProgressLine, human_duration, warn
 from vrec.errors import VrecError
 from vrec.features import FeatureSet
 from vrec.monitor import Output, PlayerState, StopReason, WatchConfig, watch
-from vrec.naming import FAILED_BLACK_PREFIX, INCOMPLETE_PREFIX, TEST_PREFIX, clean_title, rename_recording
-from vrec.obs_control import AudioMeter, is_black_frame
+from vrec.naming import (
+    FAILED_BLACK_PREFIX,
+    FAILED_FROZEN_PREFIX,
+    INCOMPLETE_PREFIX,
+    TEST_PREFIX,
+    clean_title,
+    rename_recording,
+)
+from vrec.obs_control import AudioMeter, frame_signature, is_black_frame
 
 __all__ = [
     "INCOMPLETE_REASONS",
@@ -104,6 +111,9 @@ class _ObsCapture:
 
     def is_black(self) -> bool | None:
         return is_black_frame(self._client, self._scene, self._settings)
+
+    def frame(self) -> bytes | None:
+        return frame_signature(self._client, self._scene)
 
     def audio_peak(self) -> float | None:
         return self._meter.peak if self._meter else None
@@ -214,12 +224,14 @@ def record_one(
         resume_at_s=settings.resume_at_s,
         max_stall_s=settings.max_stall_s,
         abort_if_black_after_s=settings.abort_if_black_after_s,
+        abort_if_frozen_after_s=settings.abort_if_frozen_after_s,
         audio_level=settings.audio_level,
         max_wall_factor=settings.max_wall_factor,
         max_wall_extra_s=settings.max_wall_extra_s,
         target_height=result.target_height,
         buffer_pause=features.enabled("buffer_pause"),
         black_check=features.enabled("black_check"),
+        frozen_check=features.enabled("frozen_check"),
         audio_check=features.enabled("audio_check"),
         wall_clock_cap=features.enabled("wall_clock_cap"),
     )
@@ -237,7 +249,7 @@ def record_one(
 
     if result.buffering_pauses:
         print(f"   {result.buffering_pauses} buffering pause(s), excluded from the recording")
-    if outcome.reason not in (StopReason.BLACK, StopReason.STALLED, StopReason.OBS_LOST):
+    if outcome.reason not in (StopReason.BLACK, StopReason.FROZEN, StopReason.STALLED, StopReason.OBS_LOST):
         page.wait_for_timeout(int(settings.tail_s * 1000))
     try:
         path = client.stop_record().output_path
@@ -252,6 +264,8 @@ def record_one(
         stem = f"{TEST_PREFIX} - {result.title}"
     elif outcome.reason == StopReason.BLACK:
         stem = f"{FAILED_BLACK_PREFIX} - {result.title}"
+    elif outcome.reason == StopReason.FROZEN:
+        stem = f"{FAILED_FROZEN_PREFIX} - {result.title}"
     elif outcome.reason in INCOMPLETE_REASONS:
         stem = f"{INCOMPLETE_PREFIX} - {result.title}"
     else:
@@ -279,6 +293,8 @@ def status_text(result: RecordingResult) -> str:
         return result.reason
     if result.reason == StopReason.BLACK.value:
         return "FAILED: black image (protected video?)"
+    if result.reason == StopReason.FROZEN.value:
+        return "FAILED: frozen image (OBS isn't filming the video?)"
     if result.reason in INCOMPLETE_REASONS:
         return f"FAILED: incomplete ({result.reason})"
     problems = []

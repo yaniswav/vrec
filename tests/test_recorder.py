@@ -54,6 +54,17 @@ def test_status_text_black_is_failed() -> None:
     assert status_text(r) == "FAILED: black image (protected video?)"
 
 
+def test_status_text_frozen_is_failed() -> None:
+    r = make_result(reason=StopReason.FROZEN.value)
+    assert status_text(r) == "FAILED: frozen image (OBS isn't filming the video?)"
+    assert history_status(r) == (history.STATUS_FAILED, "FAILED: frozen image (OBS isn't filming the video?)")
+
+
+def test_frozen_does_not_trigger_the_lower_quality_retry() -> None:
+    r = make_result(reason=StopReason.FROZEN.value, target_height=1080)
+    assert lower_quality_retry_cap(r, False) == 0
+
+
 def test_status_text_error_passthrough() -> None:
     r = make_result(reason="ERROR: something broke")
     assert status_text(r) == "ERROR: something broke"

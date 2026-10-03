@@ -246,6 +246,14 @@ def test_black_image_is_named_failed_black(tmp_path, patched, monkeypatch):
     assert result.reason == "black image"
 
 
+def test_frozen_image_is_named_failed_frozen(tmp_path, patched, monkeypatch):
+    from vrec.monitor import StopReason
+
+    result, _, _ = run_with_outcome(tmp_path, monkeypatch, StopReason.FROZEN)
+    assert result.file == tmp_path / "FAILED frozen image - My Video.mkv"
+    assert result.reason == "frozen image"
+
+
 @pytest.mark.parametrize("name", ["STALLED", "VIDEO_GONE", "TOO_LONG", "OBS_LOST"])
 def test_incomplete_reasons_are_named_incomplete(tmp_path, patched, monkeypatch, name):
     from vrec.monitor import StopReason

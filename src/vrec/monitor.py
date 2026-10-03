@@ -15,10 +15,16 @@ from enum import StrEnum
 from typing import Protocol, TypedDict
 
 from vrec.console import human_duration
+from vrec.obs_control import changed_fraction
 
 # While buffering, resume once the reserve has stopped growing for this long: some players
 # cap their buffer by size, so at high bitrates the resume threshold may never be reached.
 PLATEAU_S = 5.0
+# Frozen image check: seconds between two screenshots, and the first playback second it may run.
+FROZEN_INTERVAL_S = 10.0
+FROZEN_START_S = 10.0
+# A pair of screenshots counts as "changed" when at least this fraction of pixels moved.
+FROZEN_MIN_CHANGE = 0.02
 # Seconds between two checks of the player.
 TICK_S = 0.5
 # The page may pause the video on its own (focus loss, autoplay rules...): replay it at most
@@ -37,6 +43,7 @@ class StopReason(StrEnum):
     VIDEO_GONE = "video removed from page"
     STALLED = "loading stalled"
     BLACK = "black image"
+    FROZEN = "frozen image"
     TOO_LONG = "took too long"
     OBS_LOST = "OBS stopped recording"
 
@@ -77,6 +84,9 @@ class Capture(Protocol):
     def is_black(self) -> bool | None:
         """Whether the captured image is black; None if it couldn't be checked."""
 
+    def frame(self) -> bytes | None:
+        """A small grayscale signature of the captured image; None if it couldn't be taken."""
+
     def audio_peak(self) -> float | None:
         """Loudest audio level since the recording started; None if unavailable."""
 
@@ -95,12 +105,14 @@ class WatchConfig:
     resume_at_s: float = 10
     max_stall_s: float = 300
     abort_if_black_after_s: float = 60
+    abort_if_frozen_after_s: float = 180
     audio_level: float = 0.003
     max_wall_factor: float = 3
     max_wall_extra_s: float = 600
     target_height: int = 0  # height asked from the player (0 = unknown): used for the quality warning
     buffer_pause: bool = True
     black_check: bool = True
+    frozen_check: bool = True
     audio_check: bool = True
     wall_clock_cap: bool = True
 
@@ -163,6 +175,9 @@ def watch(
     audio_warned = stall_warned = quality_warned = False
     replays = 0
     next_black_check = start + 3
+    next_frame_check = start + FROZEN_START_S
+    prev_frame: bytes | None = None
+    frame_t, frame_elapsed, frozen_s = 0.0, 0.0, 0.0
     buffering, buffering_start, paused_time = False, 0.0, 0.0
     pause_allowed = config.buffer_pause
     best_buffer, last_growth = 0.0, 0.0
@@ -276,6 +291,22 @@ def watch(
                     break
             else:
                 outcome.image_ok = True
+
+        if config.frozen_check and now >= next_frame_check:
+            next_frame_check = now + FROZEN_INTERVAL_S
+            frame = capture.frame()
+            if frame is not None:
+                # Only real playback counts: the time must have advanced and the video not be paused.
+                playing = not state["paused"] and state["t"] - frame_t > FROZEN_INTERVAL_S / 4
+                if playing and prev_frame is not None:
+                    if changed_fraction(prev_frame, frame) >= FROZEN_MIN_CHANGE:
+                        frozen_s = 0.0
+                    else:
+                        frozen_s += elapsed - frame_elapsed
+                        if frozen_s >= config.abort_if_frozen_after_s:
+                            outcome.reason = StopReason.FROZEN
+                            break
+                prev_frame, frame_t, frame_elapsed = frame, state["t"], elapsed
 
         if config.audio_check and not audio_warned and elapsed > 20:
             peak = capture.audio_peak()
