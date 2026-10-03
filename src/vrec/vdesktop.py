@@ -217,6 +217,9 @@ class _Guid(ctypes.Structure):
     ]
 
 
+_RPC_E_CHANGED_MODE = -2147417850  # 0x80010106
+
+
 def _guid(text: str) -> _Guid:
     raw = uuid.UUID(text.strip("{}"))
     guid = _Guid()
@@ -232,10 +235,14 @@ def on_current_desktop(hwnd: int) -> bool | None:
     initialized = False
     manager = ctypes.c_void_p()
     try:
-        hr = ole32.CoInitializeEx(None, 2)  # COINIT_APARTMENTTHREADED
-        # S_OK / S_FALSE need a matching CoUninitialize; RPC_E_CHANGED_MODE means COM is already
-        # set up differently on this thread, which is fine to use as is.
-        initialized = hr in (0, 1)
+        # S_OK / S_FALSE need a matching CoUninitialize. OleDLL raises on RPC_E_CHANGED_MODE: COM
+        # is already set up differently on this thread, which is fine to use as is.
+        try:
+            ole32.CoInitializeEx(None, 2)  # COINIT_APARTMENTTHREADED
+            initialized = True
+        except OSError as e:
+            if getattr(e, "winerror", None) != _RPC_E_CHANGED_MODE:
+                raise
         clsid, iid = _guid(_CLSID_VDM), _guid(_IID_VDM)
         ole32.CoCreateInstance(
             ctypes.byref(clsid),

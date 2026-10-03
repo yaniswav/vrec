@@ -217,3 +217,27 @@ def test_guid_layout() -> None:
     guid = vdesktop._guid(vdesktop._CLSID_VDM)
     assert guid.Data1 == 0xAA509086 and guid.Data2 == 0x5CA9 and guid.Data3 == 0x4C25
     assert bytes(guid.Data4) == bytes.fromhex("8f95589d3c07b48a")
+
+
+def test_on_current_desktop_with_com_already_set_up_differently(monkeypatch):
+    calls: list[str] = []
+
+    class ChangedModeOle:
+        def __init__(self, name: str) -> None:
+            pass
+
+        def CoInitializeEx(self, *args: Any) -> int:  # noqa: N802
+            error = OSError("changed mode")
+            error.winerror = vdesktop._RPC_E_CHANGED_MODE  # type: ignore[attr-defined]
+            raise error
+
+        def CoCreateInstance(self, *args: Any) -> int:  # noqa: N802
+            calls.append("create")
+            return 0  # leaves the interface pointer empty
+
+        def CoUninitialize(self) -> None:  # noqa: N802
+            calls.append("uninit")
+
+    monkeypatch.setattr(ctypes, "OleDLL", ChangedModeOle)
+    assert vdesktop.on_current_desktop(123) is None
+    assert calls == ["create"]  # went on with COM as is, and didn't uninitialize what it didn't set up

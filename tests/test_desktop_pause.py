@@ -176,3 +176,13 @@ def test_record_one_feature_off_does_not_even_look(tmp_path: Path, patched, monk
     result, client = run(tmp_path, FakePage(duration=10), FeatureSet({"desktop_pause": False}))
     assert looked == [] and client.events == ["start", "stop"]
     assert recorder._desktop_probe  # still available for the default case
+
+
+def test_a_window_shown_on_all_desktops_counts_as_visible(monkeypatch):
+    monkeypatch.setattr(recorder.vdesktop, "find_chrome_hwnd", lambda page: 42)
+    monkeypatch.setattr(recorder.vdesktop, "on_current_desktop", lambda hwnd: False)
+    monkeypatch.setattr(recorder.vdesktop, "is_pinned", lambda hwnd: True)
+    probe = recorder._desktop_probe(object())  # type: ignore[arg-type]
+    assert probe is not None and probe() is True
+    monkeypatch.setattr(recorder.vdesktop, "is_pinned", lambda hwnd: False)
+    assert probe() is False

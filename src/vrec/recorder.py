@@ -137,7 +137,15 @@ def _desktop_probe(page: Page) -> Callable[[], bool | None] | None:
     hwnd = vdesktop.find_chrome_hwnd(page)
     if hwnd is None:
         return None
-    return lambda: vdesktop.on_current_desktop(hwnd)
+
+    def visible() -> bool | None:
+        on_current = vdesktop.on_current_desktop(hwnd)
+        # A window shown on all desktops is always visible, whatever Windows answers for it.
+        if on_current is False and vdesktop.is_pinned(hwnd):
+            return True
+        return on_current
+
+    return visible
 
 
 def record_one(
