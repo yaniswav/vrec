@@ -431,6 +431,18 @@ update). Recording goes on, but don't switch desktops. To do it by hand: press W
 Chrome window, and choose "Show this window on all desktops". Your mouse cursor is not filmed by default
 (`[obs] capture_cursor = false`), so moving it across the virtual screen doesn't show up in the video.
 
+### "Chrome isn't on the current virtual desktop: recording paused until it is visible again."
+
+The safety net (feature `desktop_pause`): vrec checks every 2 seconds that the Chrome window is visible
+on the desktop you are on. If it isn't (the window isn't pinned and you switched desktops), it pauses
+the video and the OBS recording, like when buffering, then resumes when you come back
+(`Chrome is visible again: recording resumed.`). The time away is excluded from the recording and
+from the black, frozen and stall checks. At the end of the video you get
+`N pause(s) while Chrome wasn't on the current virtual desktop, excluded from the recording`.
+If you'd rather not be interrupted, fix the pinning (see above) or turn the feature off:
+`vrec --disable desktop_pause`. A pause that lasts as long as the wall-clock cap (`wall_clock_cap`) still
+ends the video as incomplete.
+
 ## Batches
 
 ### "Lost connection to Chrome/OBS. Batch stopped; the remaining videos are untouched."

@@ -32,6 +32,9 @@ TICK_S = 0.5
 MAX_REPLAYS = 5
 # Seconds (wall time) between two checks that the recorder is still recording.
 LIVENESS_S = 30.0
+# Seconds between two checks that Chrome is visible on the current virtual desktop.
+DESKTOP_CHECK_S = 2.0
+AWAY_MESSAGE = "Chrome isn't on the current virtual desktop: recording paused until it is visible again."
 # Consecutive checks that couldn't tell before the recorder is considered lost.
 MAX_LIVENESS_UNKNOWN = 2
 
@@ -143,6 +146,7 @@ class WatchOutcome:
     image_ok: bool | None = False  # None: not checked (black_check off)
     max_resolution: tuple[int, int] = field(default=(0, 0))
     buffering_pauses: int = 0
+    desktop_pauses: int = 0
 
 
 @dataclass
@@ -164,8 +168,13 @@ def watch(
     config: WatchConfig,
     output: Output,
     clock: Callable[[], float] = time.time,
+    visible: Callable[[], bool | None] | None = None,
 ) -> WatchOutcome:
-    """Follow playback until the video ends or a stop condition is met."""
+    """Follow playback until the video ends or a stop condition is met.
+
+    `visible` tells whether Chrome is shown on the current virtual desktop (None = can't tell, which
+    counts as visible). While it isn't, the video and the recording are paused, like when buffering.
+    """
     outcome = WatchOutcome(reason=StopReason.ENDED, image_ok=False if config.black_check else None)
     start = clock()
     soft_limit = config.soft_limit()
@@ -182,11 +191,21 @@ def watch(
     pause_allowed = config.buffer_pause
     best_buffer, last_growth = 0.0, 0.0
     next_liveness, liveness_unknown = start + LIVENESS_S, 0
+    # Away: Chrome isn't on the current desktop. `away_paused` is whether this pause is the one holding
+    # the recording (not when buffering already paused it: that time is counted by the buffering).
+    away, away_start, away_paused = False, 0.0, False
+    next_desktop_check = start + DESKTOP_CHECK_S
 
     while True:
         player.wait(TICK_S)
         now = clock()
-        elapsed = now - start - paused_time - (now - buffering_start if buffering else 0)
+        elapsed = (
+            now
+            - start
+            - paused_time
+            - (now - buffering_start if buffering else 0)
+            - (now - away_start if away_paused else 0)
+        )
         state = player.state()
         if state is None:
             outcome.reason = StopReason.VIDEO_GONE
@@ -212,6 +231,45 @@ def watch(
             if alive is False or liveness_unknown >= MAX_LIVENESS_UNKNOWN:
                 outcome.reason = StopReason.OBS_LOST
                 break
+
+        if visible is not None and now >= next_desktop_check:
+            next_desktop_check = now + DESKTOP_CHECK_S
+            try:
+                shown = visible()
+            except Exception:
+                shown = None
+            if shown is False and not away:
+                player.pause()
+                away_paused = not buffering
+                if away_paused:
+                    try:
+                        capture.pause()
+                    except Exception:
+                        away_paused = False
+                        visible = None  # OBS can't pause: give the feature up for this video
+                        if not buffering:
+                            player.play()
+                        output.warn("OBS refuses to pause: switching desktops will be recorded.")
+                if visible is not None:
+                    away, away_start = True, now
+                    outcome.desktop_pauses += 1
+                    output.end_progress()
+                    output.warn(AWAY_MESSAGE)
+            elif shown is not False and away:
+                if away_paused:
+                    capture.resume()
+                    paused_time += now - away_start
+                away, away_paused = False, False
+                last_progress = now  # the video didn't advance while away: not a stall
+                if buffering:
+                    last_growth = now  # the buffer's plateau clock must not count the time away
+                else:
+                    player.play()
+                output.progress("Chrome is visible again: recording resumed.")
+                output.end_progress()
+        if away:
+            output.progress("Chrome isn't on the current virtual desktop (recording paused)")
+            continue
 
         video_duration = state["d"]
         remaining = video_duration - state["t"] if _known(video_duration) else math.inf

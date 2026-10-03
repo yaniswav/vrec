@@ -105,8 +105,8 @@ def patched(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, str]]:
     monkeypatch.setattr(
         recorder,
         "watch",
-        lambda player, capture, config, output: real_watch(
-            player, capture, config, output, clock=lambda: player._page.now
+        lambda player, capture, config, output, **kw: real_watch(
+            player, capture, config, output, clock=lambda: player._page.now, **kw
         ),
     )
     monkeypatch.setattr(recorder, "document_script", no_script)
@@ -217,7 +217,7 @@ def run_with_outcome(
     from vrec.monitor import WatchOutcome
 
     monkeypatch.setattr(
-        recorder, "watch", lambda player, capture, config, output: WatchOutcome(reason=reason)
+        recorder, "watch", lambda player, capture, config, output, **kw: WatchOutcome(reason=reason)
     )
     page = TimedPage()
     client = FakeObs(tmp_path / "2026-09-27 10-00-00.mkv")

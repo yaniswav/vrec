@@ -121,7 +121,9 @@ Checking everything before recording...
   Before recording, vrec makes the recording Chrome window "Show this window on all desktops" and puts
   it back afterwards (a window you pinned yourself stays pinned), so you can record on desktop 3 and
   work on desktop 1. If that fails you get a warning with the manual steps (Win+Tab, right-click the
-  window). vrec's own OBS capture doesn't film the mouse cursor unless `[obs] capture_cursor` is `true`,
+  window). As a safety net (feature `desktop_pause`), if Chrome still isn't visible on the current
+  desktop while a video plays, the video and the OBS recording are paused, like when buffering, and
+  resume when it is back; that time is excluded from the recording. vrec's own OBS capture doesn't film the mouse cursor unless `[obs] capture_cursor` is `true`,
   so your mouse crossing onto the virtual screen isn't recorded.
 - **Feature toggles** let you turn any of the behavior above off individually if it misbehaves for
   you; see [Features on/off](#features-onoff) below.
@@ -362,6 +364,7 @@ the single-instance lock (`data\vrec.lock`).
 | `auto_place_window` | ON | Move the recording Chrome window to the virtual display automatically |
 | `manage_virtual_display` | OFF | Turn the virtual display on before a batch and off after it |
 | `pin_all_desktops` | ON | Show the recording Chrome on all virtual desktops, so you can switch desktops |
+| `desktop_pause` | ON | Pause the recording while Chrome isn't on the current virtual desktop |
 | `audio_sink` | ON | Send only the recorded video's sound to CABLE Input (no Windows mixer setup) |
 | `auto_start_obs` | ON | Start OBS if it isn't open (it stays open afterwards) |
 | `auto_start_chrome` | ON | Start the recording Chrome if it isn't open (it stays open afterwards) |
