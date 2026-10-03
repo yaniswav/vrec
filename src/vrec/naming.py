@@ -23,12 +23,13 @@ FAILED_BLACK_PREFIX = "FAILED black image"
 FAILED_FROZEN_PREFIX = "FAILED frozen image"
 INCOMPLETE_PREFIX = "INCOMPLETE"
 INTERRUPTED_PREFIX = "INTERRUPTED"  # recordings cut short by Ctrl+C or an error
+SKIPPED_PREFIX = "SKIPPED"  # recordings of a video skipped with the S key
 
 # Legacy (French) failure marker used by recordings made before this rewrite.
 _LEGACY_FAILED_MARKER = "ECHEC"
 
 # Stems starting with any of these are never a genuine completed recording.
-_EXCLUDED_PREFIXES = (TEST_PREFIX, INCOMPLETE_PREFIX, INTERRUPTED_PREFIX)
+_EXCLUDED_PREFIXES = (TEST_PREFIX, INCOMPLETE_PREFIX, INTERRUPTED_PREFIX, SKIPPED_PREFIX)
 
 
 def clean_title(text: str | None) -> str:
@@ -79,3 +80,15 @@ def rename_recording(path: str | Path, new_stem: str) -> Path:
         except OSError:
             time.sleep(1)
     return path
+
+
+def delete_recording(path: str | Path) -> bool:
+    """Delete a recording vrec just made. Retries briefly if OBS still holds it; False if it stays."""
+    path = Path(path)
+    for _ in range(30):
+        try:
+            path.unlink(missing_ok=True)
+            return True
+        except OSError:
+            time.sleep(1)
+    return False

@@ -24,6 +24,7 @@ from playwright.sync_api import Browser, Page
 from vrec import (
     display,
     history,
+    hotkeys,
     launcher,
     menu,
     notify,
@@ -51,6 +52,7 @@ from vrec.naming import INTERRUPTED_PREFIX, clean_title, rename_recording
 from vrec.playlist import read_playlist
 from vrec.recorder import (
     RecordingResult,
+    StopReason,
     history_status,
     lower_quality_retry_cap,
     record_one,
@@ -93,6 +95,7 @@ class Batch:
     hidden_sources: list[tuple[str, int]] = field(default_factory=list)  # (source name, item id) hidden
     capture_mode: str = "screen"  # what `capture` is: "screen" or "window"
     interactive: bool = False
+    controls: hotkeys.Controls | None = None  # keyboard controls, None when not usable
     kept_awake: bool = False  # this run asked Windows not to sleep
     chrome_hwnd: int | None = None  # the recording Chrome window, once found
     pinned_hwnd: int | None = None  # the window vrec pinned to all virtual desktops (to unpin it)
@@ -178,6 +181,7 @@ def _run_locked(
 
             if client.get_record_status().output_active:
                 raise VrecError("An OBS recording started meanwhile. Stop it, then restart.")
+            batch.controls = hotkeys.make_controls(features.enabled("hotkeys"))
 
             try:
                 _ensure_page(batch)
@@ -615,7 +619,15 @@ def _record_batch(
     # Set by `run()` before the batch loop starts.
     assert batch.page is not None
     error_streak = 0
+    if batch.controls:
+        print(hotkeys.KEYS_LINE)
     for i, (url, title) in enumerate(selection, 1):
+        if batch.controls:
+            batch.controls.drain()  # Q and H pressed between two videos
+            if batch.controls.quit_requested:
+                print("Stopping the batch as requested.")
+                batch.stopped_early = True
+                break
         _ensure_page(batch, redo_window=True)
         batch.current_title = history.display_title(batch.videos_history, url, title)
         if not _enough_disk_space(batch, free_bytes):
@@ -624,12 +636,15 @@ def _record_batch(
         batch.current_url = url
         result, had_error = _record_one_with_retry(batch, i, len(selection), url, title, record)
         batch.results.append(result)
-        if not batch.test_mode:
+        skipped = result.reason == StopReason.SKIPPED.value
+        if not batch.test_mode and not skipped:  # a skipped video keeps its history entry as it was
             _record_in_history(batch, url, result)
         batch.current_url = ""
         print(f"   -> {status_text(result)}\n")
 
-        if had_error:
+        if skipped:
+            pass  # neither a failure nor a success for the error streak
+        elif had_error:
             error_streak += 1
             if batch.features.enabled("circuit_breaker"):
                 if _connection_lost(batch, chrome_alive, obs_alive):
@@ -676,42 +691,39 @@ def _record_one_with_retry(
     window: dict[str, str] = {}
     if batch.capture and batch.capture_mode == "window":
         window["window_capture"] = batch.capture
+    if batch.controls:
+        window["controls"] = batch.controls  # type: ignore[assignment]
+
+    def record_again(max_height: int) -> RecordingResult:
+        # R restarts the video from the beginning as many times as it is pressed.
+        while True:
+            result = record(
+                batch.page,
+                batch.client,
+                batch.meter,
+                batch.scene,
+                batch.settings,
+                batch.features,
+                number,
+                total,
+                url,
+                title,
+                batch.test_mode,
+                max_height,
+                **window,
+            )
+            if result.reason != StopReason.RESTART.value:
+                return result
+            print("   Restarting this video from the beginning...\n")
+
     try:
-        result = record(
-            batch.page,
-            batch.client,
-            batch.meter,
-            batch.scene,
-            batch.settings,
-            batch.features,
-            number,
-            total,
-            url,
-            title,
-            batch.test_mode,
-            batch.settings.max_height,
-            **window,
-        )
+        result = record_again(batch.settings.max_height)
         if batch.features.enabled("quality_retry"):
             retry_cap = lower_quality_retry_cap(result, batch.test_mode)
             if retry_cap:
                 print(f"   -> {status_text(result)}")
                 print(f"   Retrying once below {result.target_height}p...\n")
-                result = record(
-                    batch.page,
-                    batch.client,
-                    batch.meter,
-                    batch.scene,
-                    batch.settings,
-                    batch.features,
-                    number,
-                    total,
-                    url,
-                    title,
-                    batch.test_mode,
-                    retry_cap,
-                    **window,
-                )
+                result = record_again(retry_cap)
         return result, False
     except Exception as e:
         return _handle_failed_video(batch, number, e), True
@@ -802,7 +814,7 @@ def exit_code(batch: Batch) -> int:
         return 130
     if batch.test_mode and batch.results:
         return 0 if status_text(batch.results[0]) == "OK" else 1
-    if batch.stopped_early or any(status_text(r) != "OK" for r in batch.results):
+    if batch.stopped_early or any(status_text(r) not in ("OK", "SKIPPED") for r in batch.results):
         return 1
     return 0
 
@@ -896,6 +908,9 @@ def summary_line(results: list[RecordingResult], elapsed_s: float) -> str:
             with contextlib.suppress(OSError):
                 size += r.file.stat().st_size
     parts = [f"{ok}/{len(results)} OK"]
+    skipped = sum(1 for r in results if status_text(r) == "SKIPPED")
+    if skipped:
+        parts.append(f"{skipped} skipped")
     if recorded:
         parts.append(f"{human_duration(recorded)} of video")
     if size:

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol, TypedDict
 
+from vrec import hotkeys
 from vrec.console import human_duration
 from vrec.obs_control import changed_fraction
 
@@ -49,6 +50,8 @@ class StopReason(StrEnum):
     FROZEN = "frozen image"
     TOO_LONG = "took too long"
     OBS_LOST = "OBS stopped recording"
+    SKIPPED = "skipped"  # S key
+    RESTART = "restart requested"  # R key
 
 
 class PlayerState(TypedDict):
@@ -149,13 +152,46 @@ class WatchOutcome:
     desktop_pauses: int = 0
 
 
+def _say(message: str) -> None:
+    print(f"   {message}")
+
+
 @dataclass
 class Output:
-    """Where the loop reports: one-off warnings, and a progress line rewritten in place."""
+    """Where the loop reports: one-off warnings, a progress line rewritten in place, and plain notes."""
 
     warn: Callable[[str], None]
     progress: Callable[[str], None]
     end_progress: Callable[[], None]
+    info: Callable[[str], None] = _say
+
+
+class _Holds:
+    """Why the video and the recording are paused (buffering, away, manual): paused while any is active.
+
+    Tracks the total time spent paused so it can be left out of the playing time.
+    """
+
+    def __init__(self) -> None:
+        self.active: set[str] = set()
+        self.since = 0.0
+        self.total = 0.0
+
+    def begin(self, reason: str, now: float) -> None:
+        if not self.active:
+            self.since = now
+        self.active.add(reason)
+
+    def end(self, reason: str, now: float) -> bool:
+        """Drop a reason. True when it was the last one, so the recording must resume."""
+        self.active.discard(reason)
+        if self.active:
+            return False
+        self.total += now - self.since
+        return True
+
+    def held(self, now: float) -> float:
+        return self.total + (now - self.since if self.active else 0.0)
 
 
 def _known(value: float | None) -> bool:
@@ -169,11 +205,14 @@ def watch(
     output: Output,
     clock: Callable[[], float] = time.time,
     visible: Callable[[], bool | None] | None = None,
+    keys: Callable[[], str | None] | None = None,
 ) -> WatchOutcome:
     """Follow playback until the video ends or a stop condition is met.
 
     `visible` tells whether Chrome is shown on the current virtual desktop (None = can't tell, which
     counts as visible). While it isn't, the video and the recording are paused, like when buffering.
+    `keys` returns the pending keyboard command (hotkeys.PAUSE, SKIP, RESTART) or None. P pauses the
+    video and the recording too. They resume only when no pause reason (buffering, away, P) is left.
     """
     outcome = WatchOutcome(reason=StopReason.ENDED, image_ok=False if config.black_check else None)
     start = clock()
@@ -187,25 +226,44 @@ def watch(
     next_frame_check = start + FROZEN_START_S
     prev_frame: bytes | None = None
     frame_t, frame_elapsed, frozen_s = 0.0, 0.0, 0.0
-    buffering, buffering_start, paused_time = False, 0.0, 0.0
+    buffering, buffering_start = False, 0.0
+    holds = _Holds()
     pause_allowed = config.buffer_pause
     best_buffer, last_growth = 0.0, 0.0
     next_liveness, liveness_unknown = start + LIVENESS_S, 0
-    # Away: Chrome isn't on the current desktop. `away_paused` is whether this pause is the one holding
-    # the recording (not when buffering already paused it: that time is counted by the buffering).
-    away, away_start, away_paused = False, 0.0, False
+    away, away_start = False, 0.0  # Chrome isn't on the current desktop
+    manual, manual_start = False, 0.0  # paused with P
     next_desktop_check = start + DESKTOP_CHECK_S
+
+    def hold(reason: str, now: float) -> bool:
+        """Pause the video and the recording for a reason. False if OBS refuses (nothing changed)."""
+        if not holds.active:
+            player.pause()
+            try:
+                capture.pause()
+            except Exception:
+                player.play()
+                return False
+        holds.begin(reason, now)
+        return True
+
+    def release(reason: str, now: float) -> None:
+        if holds.end(reason, now):
+            capture.resume()
+            player.play()
+
+    def resumed_from_pause(now: float, span_start: float) -> None:
+        """Bookkeeping after an away or manual pause: it must not count as a stall or as buffering time."""
+        nonlocal last_progress, last_growth, buffering_start
+        last_progress = now  # the video didn't advance meanwhile: not a stall
+        if buffering:
+            last_growth = now  # the buffer's plateau clock must not count that time
+            buffering_start += now - span_start
 
     while True:
         player.wait(TICK_S)
         now = clock()
-        elapsed = (
-            now
-            - start
-            - paused_time
-            - (now - buffering_start if buffering else 0)
-            - (now - away_start if away_paused else 0)
-        )
+        elapsed = now - start - holds.held(now)
         state = player.state()
         if state is None:
             outcome.reason = StopReason.VIDEO_GONE
@@ -216,10 +274,36 @@ def watch(
         if elapsed > soft_limit:
             outcome.reason = StopReason.TEST_DONE if config.test_mode else StopReason.TIME_LIMIT
             break
-        if now >= wall_deadline:
+        if now >= wall_deadline + (now - manual_start if manual else 0):
             # Stops even mid-buffering: OBS can stop a paused recording just fine.
             outcome.reason = StopReason.TOO_LONG
             break
+
+        command = None
+        if keys is not None:
+            try:
+                command = keys()
+            except Exception:
+                command = None
+        if command == hotkeys.SKIP:
+            outcome.reason = StopReason.SKIPPED
+            break
+        if command == hotkeys.RESTART:
+            outcome.reason = StopReason.RESTART
+            break
+        if command == hotkeys.PAUSE:
+            output.end_progress()
+            if manual:
+                release("manual", now)
+                manual = False
+                wall_deadline += now - manual_start  # the user's pause doesn't count against the cap
+                resumed_from_pause(now, manual_start)
+                output.info("Resumed.")
+            elif hold("manual", now):
+                manual, manual_start = True, now
+                output.info("Paused (P to resume).")
+            else:
+                output.warn("OBS refuses to pause: can't pause the recording.")
 
         if now >= next_liveness:
             next_liveness = now + LIVENESS_S
@@ -239,36 +323,25 @@ def watch(
             except Exception:
                 shown = None
             if shown is False and not away:
-                player.pause()
-                away_paused = not buffering
-                if away_paused:
-                    try:
-                        capture.pause()
-                    except Exception:
-                        away_paused = False
-                        visible = None  # OBS can't pause: give the feature up for this video
-                        if not buffering:
-                            player.play()
-                        output.warn("OBS refuses to pause: switching desktops will be recorded.")
-                if visible is not None:
+                if hold("away", now):
                     away, away_start = True, now
                     outcome.desktop_pauses += 1
                     output.end_progress()
                     output.warn(AWAY_MESSAGE)
-            elif shown is not False and away:
-                if away_paused:
-                    capture.resume()
-                    paused_time += now - away_start
-                away, away_paused = False, False
-                last_progress = now  # the video didn't advance while away: not a stall
-                if buffering:
-                    last_growth = now  # the buffer's plateau clock must not count the time away
                 else:
-                    player.play()
+                    visible = None  # OBS can't pause: give the feature up for this video
+                    output.warn("OBS refuses to pause: switching desktops will be recorded.")
+            elif shown is not False and away:
+                release("away", now)
+                away = False
+                resumed_from_pause(now, away_start)
                 output.progress("Chrome is visible again: recording resumed.")
                 output.end_progress()
         if away:
             output.progress("Chrome isn't on the current virtual desktop (recording paused)")
+            continue
+        if manual:
+            output.progress("Paused (P to resume)")
             continue
 
         video_duration = state["d"]
@@ -284,9 +357,7 @@ def watch(
             plateaued = now - last_growth >= PLATEAU_S and buffer >= config.pause_below_s + 2
             output.progress(f"Buffering... {buffer:4.1f} s in reserve (recording paused)")
             if enough or plateaued:
-                capture.resume()
-                player.play()
-                paused_time += waited
+                release("buffering", now)
                 buffering = False
             elif waited > config.max_stall_s:
                 outcome.reason = StopReason.STALLED
@@ -295,12 +366,8 @@ def watch(
 
         # Buffer almost empty: pause everything BEFORE the image freezes.
         if pause_allowed and buffer < config.pause_below_s and remaining > config.pause_below_s + 1:
-            player.pause()
-            try:
-                capture.pause()
-            except Exception:
+            if not hold("buffering", now):
                 pause_allowed = False
-                player.play()
                 output.warn("OBS refuses to pause: buffering will be recorded (frozen image).")
             else:
                 buffering, buffering_start = True, now
