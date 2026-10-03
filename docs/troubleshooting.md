@@ -326,6 +326,17 @@ First check that the OBS source is actually capturing the virtual display. If on
 out black, they are DRM-protected and vrec cannot record them. It isn't a bypass tool: check whether
 the site offers an official download or a companion app (for example a headset app) instead.
 
+### Frozen image
+
+vrec compares a tiny screenshot of the OBS scene about every 10 seconds while the video plays. If the
+picture stays the same for 180 seconds of playback (`[checks] abort_if_frozen_after`), it stops and
+fails the recording. This usually means another source is visible on top of the capture in the scene
+(for example a stray window or image capture), or a window capture points at the wrong window, so OBS
+films a still picture while the video plays fine in Chrome. Open the scene in OBS, hide or remove the
+extra source, and check that the capture shows the Chrome window. A video that really is still for
+three minutes (a single slide with a voice-over) triggers it too: raise the value or turn off the
+`frozen_check` feature for those.
+
 ## Quality
 
 vrec intercepts the list of available qualities before the player starts and lets only the best one
@@ -485,6 +496,11 @@ entry has the detail "interrupted". vrec then exits with code 130.
 The image stayed black for too long (60 s by default) and the recording was abandoned: see
 [Black image](#black-image) above.
 
+### `FAILED frozen image - <title>`
+
+The picture in OBS did not change for too long while the video played and the recording was
+abandoned: see [Frozen image](#frozen-image) above.
+
 ### `<title> (2).mp4`, `(3).mp4`, ...
 
 vrec never overwrites an existing recording; re-recording a video, or retrying it, adds a numbered
@@ -499,6 +515,7 @@ suffix.
 | `CHECK: no audio` | No sound was captured during the recording. |
 | `CHECK: time limit reached` | The end of the video wasn't detected; recording was cut at duration + 2 minutes. |
 | `FAILED: black image (protected video?)` | Recording abandoned; the video is likely DRM-protected. |
+| `FAILED: frozen image (OBS isn't filming the video?)` | OBS kept recording the same still picture while the video played. See [Frozen image](#frozen-image). |
 | `FAILED: incomplete (loading stalled)` | Stayed stalled for too long, even after the automatic lower-quality retry. |
 | `FAILED: incomplete (video removed from page)` | The video disappeared from the page mid-recording. |
 | `FAILED: incomplete (took too long)` | The wall-clock safety cap (`[recording] max_wall_factor` x duration + `max_wall_extra`) was hit. |

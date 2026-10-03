@@ -27,6 +27,7 @@ REGISTRY: tuple[Feature, ...] = (
     Feature("quality_retry", "Retry a stalled video once at the next lower quality"),
     Feature("buffer_pause", "Pause OBS while the player buffers, so no frozen frames are recorded"),
     Feature("black_check", "Detect a black image and give up on protected videos"),
+    Feature("frozen_check", "Detect a frozen image (OBS filming a still picture) and give up"),
     Feature("audio_check", "Warn when no audio reaches OBS"),
     Feature("obs_audio_routing", "Set up OBS audio automatically (capture VB-CABLE, mute desktop and mic)"),
     Feature("wall_clock_cap", "Hard wall-clock time limit per video"),

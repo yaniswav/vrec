@@ -25,6 +25,7 @@ def test_defaults() -> None:
     assert s.test_duration_s == 30
     assert s.black_level == 20
     assert s.abort_if_black_after_s == 60
+    assert s.abort_if_frozen_after_s == 180
     assert s.audio_level == 0.003
     assert s.pause_below_s == 2
     assert s.resume_at_s == 10
@@ -116,3 +117,9 @@ def test_invalid_toml_raises(tmp_path: Path) -> None:
     path.write_text("this is not [valid toml\n", encoding="utf-8")
     with pytest.raises(VrecError, match="Invalid config file"):
         load_settings(path)
+
+
+def test_abort_if_frozen_after_is_parsed(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("[checks]\nabort_if_frozen_after = 90\n", encoding="utf-8")
+    assert load_settings(path).abort_if_frozen_after_s == 90.0

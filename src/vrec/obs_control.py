@@ -27,6 +27,9 @@ from vrec.errors import VrecError
 
 _AUDIO_SOURCE_KIND = "wasapi_input_capture"
 
+# Frozen image detection: two grayscale pixels differ when their values (0-255) are further apart than this.
+FRAME_TOLERANCE = 10
+
 # obsws-python logs a full traceback when OBS isn't reachable; vrec reports it in one line instead.
 logging.getLogger("obsws_python").setLevel(logging.CRITICAL)
 
@@ -251,6 +254,23 @@ def is_black_frame(client: obs.ReqClient, scene: str, settings: Settings) -> boo
         return extrema[1] < settings.black_level
     except Exception:
         return None
+
+
+def frame_signature(client: obs.ReqClient, scene: str, width: int = 64, height: int = 36) -> bytes | None:
+    """A small grayscale picture of the scene (one byte per pixel), or None if the screenshot failed."""
+    try:
+        r = client.get_source_screenshot(scene, "png", width, height, -1)
+        data = base64.b64decode(r.image_data.split(",", 1)[1])
+        return Image.open(io.BytesIO(data)).convert("L").tobytes()
+    except Exception:
+        return None
+
+
+def changed_fraction(a: bytes, b: bytes, tolerance: int = FRAME_TOLERANCE) -> float:
+    """Fraction of pixels whose value differs by more than `tolerance` (1.0 if the sizes differ)."""
+    if len(a) != len(b) or not a:
+        return 1.0
+    return sum(abs(x - y) > tolerance for x, y in zip(a, b, strict=True)) / len(a)
 
 
 def stop_if_recording(client: obs.ReqClient) -> str | None:

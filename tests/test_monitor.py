@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -88,6 +89,9 @@ class FakeCapture:
     black_checks: int = 0
     alive: list[bool | None] = field(default_factory=lambda: [True])
     alive_checks: int = 0
+    # The picture after n screenshots: by default it changes every time (a playing video).
+    picture: Callable[[int], bytes | None] = lambda n: bytes([(n * 97) % 256]) * 100  # noqa: E731
+    frame_checks: int = 0
 
     def pause(self) -> None:
         self.pause_calls += 1
@@ -102,6 +106,10 @@ class FakeCapture:
     def is_black(self) -> bool | None:
         self.black_checks += 1
         return self.black[min(self.black_checks - 1, len(self.black) - 1)]
+
+    def frame(self) -> bytes | None:
+        self.frame_checks += 1
+        return self.picture(self.frame_checks)
 
     def audio_peak(self) -> float | None:
         return self.peak
@@ -249,6 +257,79 @@ def test_black_check_feature_off(clock):
     assert outcome.reason == StopReason.ENDED
     assert outcome.image_ok is None
     assert capture.black_checks == 0
+
+
+STILL = bytes(100)
+
+
+def test_frozen_picture_stops_after_threshold(clock):
+    capture = FakeCapture(picture=lambda n: STILL)
+    outcome, capture, _ = run(SimPlayer(clock, duration=600), capture, abort_if_frozen_after_s=60)
+    assert outcome.reason == StopReason.FROZEN
+    assert StopReason.FROZEN.value == "frozen image"
+    assert 70 <= clock.now - 1000 <= 90  # 10 s grace + first sample + 60 s of identical pairs
+
+
+def test_moving_picture_never_stops(clock):
+    outcome, _, _ = run(SimPlayer(clock, duration=600), FakeCapture(), abort_if_frozen_after_s=60)
+    assert outcome.reason == StopReason.ENDED
+
+
+def test_a_change_resets_the_frozen_counter(clock):
+    def picture(n: int) -> bytes:
+        return bytes(100) if n % 5 else b"\xff" * 100  # a real change every 5th sample (~50 s)
+
+    capture = FakeCapture(picture=picture)
+    outcome, _, _ = run(SimPlayer(clock, duration=600), capture, abort_if_frozen_after_s=100)
+    assert outcome.reason == StopReason.ENDED
+
+
+def test_small_noise_still_counts_as_frozen(clock):
+    def picture(n: int) -> bytes:
+        return bytes([n % 3] * 100)  # tiny flicker, below the tolerance
+
+    outcome, _, _ = run(
+        SimPlayer(clock, duration=600), FakeCapture(picture=picture), abort_if_frozen_after_s=60
+    )
+    assert outcome.reason == StopReason.FROZEN
+
+
+def test_failed_screenshots_are_ignored_by_frozen_check(clock):
+    capture = FakeCapture(picture=lambda n: None)
+    outcome, capture, _ = run(SimPlayer(clock, duration=300), capture, abort_if_frozen_after_s=30)
+    assert outcome.reason == StopReason.ENDED
+    assert capture.frame_checks > 0
+
+
+def test_frozen_check_feature_off(clock):
+    capture = FakeCapture(picture=lambda n: STILL)
+    outcome, capture, _ = run(
+        SimPlayer(clock, duration=300), capture, frozen_check=False, abort_if_frozen_after_s=30
+    )
+    assert outcome.reason == StopReason.ENDED
+    assert capture.frame_checks == 0
+
+
+def test_frozen_not_counted_while_buffering(clock):
+    # Slow download: the player pauses to buffer (recording paused), which is not frozen playback.
+    player = SimPlayer(clock, duration=200, rate=0.5, initial_buffer=3, buffer_cap=30)
+    capture = FakeCapture(picture=lambda n: STILL)
+    outcome, capture, _ = run(player, capture, abort_if_frozen_after_s=40, resume_at_s=10)
+    assert outcome.buffering_pauses > 0
+    # It stops only after enough real playback time, never early on wall time spent buffering.
+    assert outcome.reason == StopReason.FROZEN
+    assert capture.pause_calls > 0
+
+
+def test_frozen_not_counted_while_paused_by_the_page(clock):
+    class StuckPlayer(SimPlayer):
+        def play(self) -> None:  # the page keeps pausing: the video never advances
+            self.plays += 1
+
+    player = StuckPlayer(clock, duration=600)
+    capture = FakeCapture(picture=lambda n: STILL)
+    outcome, _, _ = run(player, capture, abort_if_frozen_after_s=30, max_wall_extra_s=200, max_wall_factor=0)
+    assert outcome.reason == StopReason.TOO_LONG
 
 
 def test_no_audio_warns_once(clock):

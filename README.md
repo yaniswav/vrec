@@ -310,6 +310,7 @@ is optional; a missing file or key falls back to the default shown below.
 | `[recording]` | `min_free_gb` | `5` | Free space (GB) the OBS recording folder must have before each video (feature `disk_space_guard`). |
 | `[checks]` | `black_level` | `20` | A frame is considered black when its brightest pixel (0-255) is below this level. |
 | `[checks]` | `abort_if_black_after` | `60` | Give up on a video that stays black for this many seconds. |
+| `[checks]` | `abort_if_frozen_after` | `180` | Give up on a video when OBS keeps recording the same still picture for this many seconds of playback (feature `frozen_check`). |
 | `[checks]` | `audio_level` | `0.003` | Minimum audio level to consider that there is sound (roughly -50 dB). |
 | `[buffering]` | `pause_below` | `2` | Seconds of buffered video below which playback and recording pause. |
 | `[buffering]` | `resume_at` | `10` | Seconds of buffered video required before playback and recording resume. |
@@ -342,6 +343,7 @@ the single-instance lock (`data\vrec.lock`).
 | `quality_retry` | ON | Retry a stalled video once at the next lower quality |
 | `buffer_pause` | ON | Pause OBS while the player buffers, so no frozen frames are recorded |
 | `black_check` | ON | Detect a black image and give up on protected videos |
+| `frozen_check` | ON | Detect a frozen image (OBS filming a still picture) and give up |
 | `audio_check` | ON | Warn when no audio reaches OBS |
 | `obs_audio_routing` | ON | Set up OBS audio automatically (capture VB-CABLE, mute desktop and mic) |
 | `wall_clock_cap` | ON | Hard wall-clock time limit per video |
@@ -369,6 +371,7 @@ Recordings are written to your OBS recording folder. File name prefixes:
 | `<title> (2).mp4` | Re-recorded; the previous file is never overwritten |
 | `TEST - <title>` | Produced by `--test` mode |
 | `FAILED black image - <title>` | Image stayed black for too long, recording abandoned (likely DRM-protected) |
+| `FAILED frozen image - <title>` | The picture in OBS never changed while the video played, recording abandoned |
 | `INCOMPLETE - <title>` | Loading stalled (even after the automatic retry), the video was removed from the page, the wall-clock cap was hit, or OBS stopped recording |
 | `INTERRUPTED - <title>` | Recording was cut short by Ctrl+C or an error |
 
@@ -382,6 +385,7 @@ End-of-run status shown in the menu and summary:
 | `OK` (-> DONE) | Everything went fine |
 | `CHECK: ...` (-> REVIEW) | Recorded, but something needs a look: black image?, no audio, and/or the time limit was reached before the end was detected. Not retried automatically. |
 | `FAILED: black image (protected video?)` (-> FAILED) | Image stayed black the whole time (probably a protected video) |
+| `FAILED: frozen image (OBS isn't filming the video?)` (-> FAILED) | OBS kept recording the same still picture while the video played |
 | `FAILED: incomplete (...)` (-> FAILED) | Loading stalled, the video was removed from the page, it took too long overall, or OBS stopped recording |
 | `ERROR: ...` (-> FAILED) | A problem occurred on the page; the message explains what |
 

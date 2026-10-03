@@ -12,6 +12,9 @@ Initial public release.
 
 ### Added
 
+- Frozen image detection (feature `frozen_check`, `[checks] abort_if_frozen_after`, default 180 s): a
+  recording where OBS films a still picture while the video plays is stopped and marked
+  `FAILED: frozen image`.
 - A standalone Windows build: each release now includes `vrec-<version>-windows.zip`, which runs
   without Python. It holds `vrec.exe`, the `docs` folder, example files and `start.bat`, `test.bat`,
   `launch_chrome.bat` and `doctor.bat`.
