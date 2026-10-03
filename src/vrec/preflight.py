@@ -141,6 +141,7 @@ class Context:
     audio_output: str  # "" to play the tone on the default output
     audio_level: float
     wait: Callable[[float], None] = time.sleep
+    scene: str = ""  # the scene being recorded ("" skips the check for other visible captures)
     capture_mode: str = "screen"  # "window": `capture` is a window capture to point at Chrome
 
 
@@ -194,6 +195,15 @@ def check_capture(ctx: Context) -> CheckResult:
     def settle() -> None:
         ctx.wait(0.8)
 
+    if ctx.scene:
+        recorded = ctx.capture if ctx.capture != ctx.scene else None
+        if others := obs_scene.other_pictures(ctx.client, ctx.scene, recorded):
+            return CheckResult(
+                False,
+                title,
+                f"'{others[0][0]}' is also visible in the scene and would be recorded over Chrome",
+                hint="Hide it in OBS (eye icon), or remove it from that scene.",
+            )
     if ctx.capture_mode == "window" and not obs_scene.target_window(ctx.client, ctx.capture, TEST_TITLE):
         return CheckResult(
             False,

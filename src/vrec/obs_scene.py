@@ -40,6 +40,7 @@ class SceneSetup:
     created_capture: bool = False
     shown_capture: bool = False  # vrec's own capture was hidden in the scene and has been shown
     also_visible: tuple[str, ...] = ()  # other visible picture sources in the scene (recorded too)
+    also_items: tuple[tuple[str, int], ...] = ()  # the same, as (source name, scene item id)
 
 
 @dataclass(frozen=True)
@@ -92,21 +93,51 @@ def ensure_scene(client: obs.ReqClient, scene: str, mode: str = "screen") -> Sce
         fit_to_canvas(client, scene, item_id)
         created_capture = True
 
-    also_visible = tuple(
-        i["sourceName"]
-        for i in _items(client, scene)
-        if i.get("inputKind") in PICTURE_KINDS
-        and i.get("sceneItemEnabled", True)
-        and i["sourceName"] != capture
-    )
+    also_items = other_pictures(client, scene, capture)
     return SceneSetup(
         scene,
         capture,
         created_scene=created_scene,
         created_capture=created_capture,
         shown_capture=shown_capture,
-        also_visible=also_visible,
+        also_visible=tuple(name for name, _ in also_items),
+        also_items=also_items,
     )
+
+
+def other_pictures(
+    client: obs.ReqClient, scene: str, capture: str | None = None
+) -> tuple[tuple[str, int], ...]:
+    """The visible picture sources of `scene` other than `capture`, as (source name, scene item id).
+
+    Without a `capture`, the first visible picture source counts as the one being recorded.
+    """
+    pictures = [
+        i
+        for i in _items(client, scene)
+        if i.get("inputKind") in PICTURE_KINDS and i.get("sceneItemEnabled", True)
+    ]
+    if capture is None:
+        pictures = pictures[1:]
+    return tuple((i["sourceName"], i["sceneItemId"]) for i in pictures if i["sourceName"] != capture)
+
+
+def set_items_enabled(
+    client: obs.ReqClient, scene: str, items: list[tuple[str, int]], enabled: bool
+) -> list[str]:
+    """Show or hide the items in `scene`. An item is re-found by source name if its id changed; one
+    that no longer exists is skipped. Returns the names of the sources changed."""
+    present = {int(i["sceneItemId"]): i["sourceName"] for i in _items(client, scene)}
+    by_name = {name: item_id for item_id, name in present.items()}
+    done: list[str] = []
+    for name, item_id in items:
+        if present.get(item_id) != name:
+            if name not in by_name:
+                continue
+            item_id = by_name[name]
+        client.set_scene_item_enabled(scene, item_id, enabled)
+        done.append(name)
+    return done
 
 
 def _decode_title(encoded: str) -> str:

@@ -284,9 +284,17 @@ def check_scene_capture(ctx: _Context) -> Check:
         and i.get("sceneItemEnabled", True)
         and i.get("sourceName", "") != recorded
     ]
-    also = f" Also visible, so recorded too: {', '.join(repr(o) for o in others)}." if others else ""
+    names = ", ".join(repr(o) for o in others)
+    if not others:
+        also = ""
+    elif own_scene:
+        also = f" vrec hides {names} while recording."
+    else:
+        also = f" Also visible, so recorded too: {names}."
     if recorded:
         detail = f"Records '{recorded}' ({label}) in scene '{scene}'.{also}"
+        if others and own_scene:
+            return Check("info", title, detail=detail)
         if others:
             return Check(
                 "warn", title, detail=detail, hint="Hide the other sources in OBS if that's not intended."

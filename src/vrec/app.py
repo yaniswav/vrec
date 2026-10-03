@@ -77,6 +77,8 @@ class Batch:
     virtual_screen: display.Screen | None = None  # the screen this run turned on
     capture: str = ""  # vrec's display capture source (obs_scene feature)
     previous_scene: str | None = None  # program scene to switch back to
+    hidden_scene: str = ""  # scene whose other captures vrec hid
+    hidden_sources: list[tuple[str, int]] = field(default_factory=list)  # (source name, item id) hidden
     capture_mode: str = "screen"  # what `capture` is: "screen" or "window"
     interactive: bool = False
     kept_awake: bool = False  # this run asked Windows not to sleep
@@ -208,6 +210,7 @@ def _connect_obs(
     state, and check it's idle and up to date."""
     client, password = launcher.ensure_obs(settings, paths, features)
     _restore_leftover_audio(client, paths.obs_restore)
+    _restore_leftover_sources(client, paths.obs_restore_sources)
     _restore_leftover_scene(client, paths.obs_scene_restore)
 
     if client.get_record_status().output_active:
@@ -298,12 +301,17 @@ def _prepare_scene(batch: Batch) -> None:
         print(f"Added a {label} '{setup.capture}' to the OBS scene '{name}'.")
     elif setup.shown_capture:
         print(f"Showed '{setup.capture}' in the OBS scene '{name}' (it was hidden).")
-    if setup.also_visible:
-        others = ", ".join(f"'{source}'" for source in setup.also_visible)
-        warn(
-            f"The OBS scene '{name}' also shows {others}: it is recorded too. "
-            "Hide it in OBS if that's not intended."
+    if setup.also_items:
+        # Marker first, so a killed run still shows them again on the next start.
+        batch.hidden_scene, batch.hidden_sources = name, list(setup.also_items)
+        batch.paths.obs_restore_sources.write_text(
+            json.dumps({"scene": name, "items": [{"source": n, "id": i} for n, i in setup.also_items]}),
+            encoding="utf-8",
         )
+        for _, item_id in setup.also_items:
+            batch.client.set_scene_item_enabled(name, item_id, False)
+        others = ", ".join(f"'{source}'" for source in setup.also_visible)
+        print(f"Hid {others} in the OBS scene '{name}' while recording (shown again afterwards).")
     # Written before switching, so a killed run still gets its scene back on the next start.
     batch.paths.obs_scene_restore.write_text(obs_control.current_scene(batch.client), encoding="utf-8")
     batch.previous_scene = obs_scene.switch_to(batch.client, name)
@@ -311,8 +319,19 @@ def _prepare_scene(batch: Batch) -> None:
 
 
 def _restore_scene(batch: Batch) -> None:
-    """Switch OBS back to the scene the user was on."""
-    if batch.previous_scene is None or batch.client is None:
+    """Show the hidden captures again, then switch OBS back to the scene the user was on."""
+    if batch.client is None:
+        return
+    if batch.hidden_sources:
+        try:
+            obs_scene.set_items_enabled(batch.client, batch.hidden_scene, batch.hidden_sources, True)
+            batch.paths.obs_restore_sources.unlink(missing_ok=True)
+        except Exception as e:
+            warn(
+                f"Couldn't show the sources hidden in the OBS scene '{batch.hidden_scene}' again: "
+                f"{first_line(e)}"
+            )
+    if batch.previous_scene is None:
         return
     try:
         if batch.previous_scene != batch.scene:
@@ -335,6 +354,7 @@ def _preflight(batch: Batch) -> None:
         browser=batch.browser,
         client=batch.client,
         capture=batch.capture or batch.scene,
+        scene=batch.scene,
         can_retarget=bool(batch.capture) and batch.capture_mode == "screen",
         capture_mode=batch.capture_mode if batch.capture else "screen",
         screen=screen,
@@ -740,6 +760,30 @@ def _restore_leftover_scene(client: obs.ReqClient, restore_file: Path) -> None:
         restore_file.unlink(missing_ok=True)
     except Exception as e:
         warn(f"Couldn't switch OBS back to the scene '{scene}': {first_line(e)}")
+
+
+def _restore_leftover_sources(client: obs.ReqClient, restore_file: Path) -> None:
+    """If a previous run was killed while the captures of vrec's scene were hidden, show them again."""
+    if not restore_file.exists():
+        return
+    try:
+        data = json.loads(restore_file.read_text(encoding="utf-8"))
+        scene = str(data["scene"])
+        items = [(str(i["source"]), int(i["id"])) for i in data["items"]]
+    except Exception:
+        with contextlib.suppress(OSError):
+            restore_file.unlink()
+        warn("Couldn't read the leftover OBS hidden sources file: ignoring it.")
+        return
+    try:
+        if scene in obs_scene.scene_names(client):
+            done = obs_scene.set_items_enabled(client, scene, items, True)
+            if done:
+                shown = ", ".join(f"'{n}'" for n in done)
+                print(f"Showed again {shown} in the OBS scene '{scene}', hidden by an interrupted run.")
+        restore_file.unlink(missing_ok=True)
+    except Exception as e:
+        warn(f"Couldn't show the sources hidden in the OBS scene '{scene}' again: {first_line(e)}")
 
 
 def _print_diagnostic(result: RecordingResult) -> None:
