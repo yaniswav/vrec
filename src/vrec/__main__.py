@@ -184,7 +184,7 @@ def _selftest() -> int:
     import importlib
     import importlib.resources
 
-    for module in ("vrec.app", "vrec.doctor", "playwright.sync_api", "obsws_python", "PIL.Image"):
+    for module in ("vrec.app", "vrec.doctor", "playwright.sync_api", "obsws_python", "PIL.Image", "pyvda"):
         try:
             importlib.import_module(module)
         except Exception as e:

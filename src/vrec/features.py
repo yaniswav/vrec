@@ -39,6 +39,13 @@ REGISTRY: tuple[Feature, ...] = (
         "Turn the virtual display on before a batch and off after it",
         default=False,
     ),
+    Feature(
+        "pin_all_desktops", "Show the recording Chrome on all virtual desktops, so you can switch desktops"
+    ),
+    Feature(
+        "desktop_pause",
+        "Pause the recording while Chrome isn't on the current virtual desktop",
+    ),
     Feature("audio_sink", "Send only the recorded video's sound to CABLE Input (no Windows mixer setup)"),
     Feature("auto_start_obs", "Start OBS if it isn't open (it stays open afterwards)"),
     Feature("auto_start_chrome", "Start the recording Chrome if it isn't open (it stays open afterwards)"),

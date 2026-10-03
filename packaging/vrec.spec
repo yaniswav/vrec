@@ -9,7 +9,7 @@ root = Path(SPECPATH).parent
 datas = collect_data_files("vrec", includes=["js/*.js"])  # read through importlib.resources
 binaries = []
 hiddenimports = []
-for package in ("playwright", "obsws_python", "PIL"):
+for package in ("playwright", "obsws_python", "PIL", "pyvda", "comtypes"):
     package_datas, package_binaries, package_imports = collect_all(package)  # playwright: its driver folder
     datas += package_datas
     binaries += package_binaries

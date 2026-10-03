@@ -21,6 +21,7 @@ class Settings:
     obs_start_timeout_s: float = 60
     obs_scene_name: str = "vrec"
     obs_capture: str = "screen"
+    obs_capture_cursor: bool = False
     chrome_port: int = 9222
     chrome_path: str = ""
     chrome_profile: str = ""
@@ -94,6 +95,7 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
         "start_timeout": ("obs_start_timeout_s", float),
         "scene": ("obs_scene_name", str),
         "capture": ("obs_capture", str),
+        "capture_cursor": ("obs_capture_cursor", bool),
     },
     "chrome": {
         "debug_port": ("chrome_port", int),
@@ -173,6 +175,10 @@ def _coerce(section: str, key: str, value: object, field_type: type) -> object:
     if field_type is int:
         if isinstance(value, bool) or not isinstance(value, int):
             raise VrecError(f"Invalid value for [{section}] {key}: expected a whole number")
+        return value
+    if field_type is bool:
+        if not isinstance(value, bool):
+            raise VrecError(f"Invalid value for [{section}] {key}: expected true or false")
         return value
     if field_type is str:
         if not isinstance(value, str):

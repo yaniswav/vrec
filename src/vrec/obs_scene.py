@@ -30,6 +30,8 @@ _NEW_CAPTURE_SETTINGS: dict[str, dict[str, Any]] = {
     "window": {"method": 2, "priority": 1, "cursor": False, "capture_audio": False, "client_area": True},
 }
 _CHROME_SUFFIX = " - Google Chrome"
+# The setting that shows the mouse cursor, per capture mode.
+_CURSOR_KEYS = {"screen": "capture_cursor", "window": "cursor"}
 
 
 @dataclass(frozen=True)
@@ -59,12 +61,15 @@ def scene_names(client: obs.ReqClient) -> list[str]:
     return [s["sceneName"] for s in client.get_scene_list().scenes]
 
 
-def ensure_scene(client: obs.ReqClient, scene: str, mode: str = "screen") -> SceneSetup:
+def ensure_scene(
+    client: obs.ReqClient, scene: str, mode: str = "screen", capture_cursor: bool = False
+) -> SceneSetup:
     """Make sure `scene` exists and shows a capture of the right kind; create only what's missing.
 
     `mode` is "screen" (display capture) or "window" (window capture). A visible capture of that
     kind already in the scene is used as is (yours, if you set one up). Otherwise vrec's own
     capture ("<scene> screen" / "<scene> window") is shown if it was hidden, or created.
+    vrec's own capture gets its mouse cursor setting from `capture_cursor`; yours is never changed.
     """
     kind = CAPTURE_MODES[mode]
     created_scene = scene not in scene_names(client)
@@ -87,11 +92,13 @@ def ensure_scene(client: obs.ReqClient, scene: str, mode: str = "screen") -> Sce
         if capture in existing:
             item_id = client.create_scene_item(scene, capture, True).scene_item_id
         else:
-            item_id = client.create_input(
-                scene, capture, kind, dict(_NEW_CAPTURE_SETTINGS[mode]), True
-            ).scene_item_id
+            settings = {**_NEW_CAPTURE_SETTINGS[mode], _CURSOR_KEYS[mode]: capture_cursor}
+            item_id = client.create_input(scene, capture, kind, settings, True).scene_item_id
         fit_to_canvas(client, scene, item_id)
         created_capture = True
+
+    if capture == own:
+        _apply_cursor(client, own, mode, capture_cursor)
 
     also_items = other_pictures(client, scene, capture)
     return SceneSetup(
@@ -103,6 +110,17 @@ def ensure_scene(client: obs.ReqClient, scene: str, mode: str = "screen") -> Sce
         also_visible=tuple(name for name, _ in also_items),
         also_items=also_items,
     )
+
+
+def _apply_cursor(client: obs.ReqClient, source: str, mode: str, show: bool) -> None:
+    """Set the mouse cursor setting of vrec's own capture if it differs (OBS shows it unless told not to)."""
+    key = _CURSOR_KEYS[mode]
+    try:
+        current: dict[str, Any] = client.get_input_settings(source).input_settings
+        if current.get(key, True) != show:
+            client.set_input_settings(source, {key: show}, True)
+    except Exception:
+        pass  # cosmetic: never stop a batch for it
 
 
 def other_pictures(

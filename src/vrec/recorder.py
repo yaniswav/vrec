@@ -13,7 +13,7 @@ from typing import cast
 import obsws_python as obs
 from playwright.sync_api import Page
 
-from vrec import history, obs_scene
+from vrec import history, obs_scene, vdesktop
 from vrec.browser import document_script, load_js, route_audio_to
 from vrec.config import Settings
 from vrec.console import ProgressLine, human_duration, warn
@@ -64,6 +64,7 @@ class RecordingResult:
     target_height: int = 0  # height vrec asked the player for (0 = unknown)
     max_resolution: tuple[int, int] = field(default=(0, 0))
     buffering_pauses: int = 0
+    desktop_pauses: int = 0
     duration_s: float = 0.0  # length of the video (0 = unknown)
 
 
@@ -126,6 +127,17 @@ class _ObsCapture:
             return bool(self._client.get_record_status().output_active)
         except Exception:
             return None
+
+
+def _desktop_probe(page: Page) -> Callable[[], bool | None] | None:
+    """A check "is Chrome on the current virtual desktop?", or None if its window can't be found.
+
+    The window is found without touching the page (OBS's window capture follows its title).
+    """
+    hwnd = vdesktop.find_chrome_hwnd(page)
+    if hwnd is None:
+        return None
+    return lambda: vdesktop.on_current_desktop(hwnd)
 
 
 def record_one(
@@ -235,20 +247,28 @@ def record_one(
         audio_check=features.enabled("audio_check"),
         wall_clock_cap=features.enabled("wall_clock_cap"),
     )
+    visible = _desktop_probe(page) if features.enabled("desktop_pause") else None
     line = ProgressLine()
     outcome = watch(
         _PagePlayer(page),
         _ObsCapture(client, scene, settings, meter, follow),
         config,
         Output(warn=warn, progress=line.show, end_progress=line.end),
+        visible=visible,
     )
     result.reason = outcome.reason.value
     result.image_ok = outcome.image_ok
     result.max_resolution = outcome.max_resolution
     result.buffering_pauses = outcome.buffering_pauses
+    result.desktop_pauses = outcome.desktop_pauses
 
     if result.buffering_pauses:
         print(f"   {result.buffering_pauses} buffering pause(s), excluded from the recording")
+    if result.desktop_pauses:
+        print(
+            f"   {result.desktop_pauses} pause(s) while Chrome wasn't on the current virtual desktop, "
+            "excluded from the recording"
+        )
     if outcome.reason not in (StopReason.BLACK, StopReason.FROZEN, StopReason.STALLED, StopReason.OBS_LOST):
         page.wait_for_timeout(int(settings.tail_s * 1000))
     try:

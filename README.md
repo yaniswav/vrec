@@ -108,7 +108,7 @@ Checking everything before recording...
 - **Pre-flight check** (feature `preflight_check`): right before the first video of every batch, and in
   `--test` mode, vrec opens a small local test page (served from `http://127.0.0.1`) in the recording
   Chrome and checks the whole chain end to end: the virtual screen is present; Chrome is on it and
-  fullscreen; OBS actually sees Chrome (the page shows two solid colors in turn, and OBS's capture must
+  fullscreen; Chrome is shown on all virtual desktops (informative only, never blocks); OBS actually sees Chrome (the page shows two solid colors in turn, and OBS's capture must
   show them; if vrec's own display capture is filming another screen, vrec tries the other screens OBS
   offers it and keeps the one that works); and sound reaches OBS (a 1 s 440 Hz tone sent to CABLE Input
   must move OBS's meter, normally inaudible since it's routed to the cable rather than played out
@@ -116,6 +116,15 @@ Checking everything before recording...
   the same reason: finding the right audio output by name. Results print as `[ OK ]`/`[FAIL]`/`[SKIP]`
   lines; on failure, the menu asks "Record anyway? (y/N)", while `--all`/`--only` stop before recording
   anything.
+- **Working on another virtual desktop** (feature `pin_all_desktops`): Windows virtual desktops span
+  every screen, so switching desktops would show the wallpaper on the virtual screen instead of Chrome.
+  Before recording, vrec makes the recording Chrome window "Show this window on all desktops" and puts
+  it back afterwards (a window you pinned yourself stays pinned), so you can record on desktop 3 and
+  work on desktop 1. If that fails you get a warning with the manual steps (Win+Tab, right-click the
+  window). As a safety net (feature `desktop_pause`), if Chrome still isn't visible on the current
+  desktop while a video plays, the video and the OBS recording are paused, like when buffering, and
+  resume when it is back; that time is excluded from the recording. vrec's own OBS capture doesn't film the mouse cursor unless `[obs] capture_cursor` is `true`,
+  so your mouse crossing onto the virtual screen isn't recorded.
 - **Feature toggles** let you turn any of the behavior above off individually if it misbehaves for
   you; see [Features on/off](#features-onoff) below.
 - **`vrec --doctor`** checks your setup (OBS, Chrome, disk space, audio routing, the virtual screen...)
@@ -299,6 +308,7 @@ is optional; a missing file or key falls back to the default shown below.
 | `[obs]` | `start_timeout` | `60` | Seconds to wait for OBS's WebSocket server to answer after starting it (feature `auto_start_obs`). |
 | `[obs]` | `scene` | `vrec` | Name of the OBS scene vrec records from (feature `obs_scene`); created automatically, with a display or window capture, if it doesn't already exist. |
 | `[obs]` | `capture` | `screen` | What OBS records: `screen` (display capture of the virtual screen) or `window` (window capture of the recording Chrome window). |
+| `[obs]` | `capture_cursor` | `false` | Film the mouse cursor in vrec's own OBS capture (`<scene> screen` / `<scene> window`). Off by default, so your mouse never shows up when it crosses onto the virtual screen. Your own capture sources are never changed. |
 | `[chrome]` | `debug_port` | `9222` | Remote debugging port Chrome was started with (see `launch_chrome.bat`). |
 | `[chrome]` | `path` | (empty) | Path to `chrome.exe`, if vrec can't find it itself (feature `auto_start_chrome`). Empty = look in the standard install locations, then the registry. |
 | `[chrome]` | `profile` | (empty) | Chrome profile directory used when vrec starts the recording Chrome itself (feature `auto_start_chrome`). Empty = `VREC_CHROME_PROFILE`, then `%LocalAppData%\vrec\chrome-profile` (same as `launch_chrome.bat`). |
@@ -353,6 +363,8 @@ the single-instance lock (`data\vrec.lock`).
 | `run_logs` | ON | Write a log file for each run in `data\logs` |
 | `auto_place_window` | ON | Move the recording Chrome window to the virtual display automatically |
 | `manage_virtual_display` | OFF | Turn the virtual display on before a batch and off after it |
+| `pin_all_desktops` | ON | Show the recording Chrome on all virtual desktops, so you can switch desktops |
+| `desktop_pause` | ON | Pause the recording while Chrome isn't on the current virtual desktop |
 | `audio_sink` | ON | Send only the recorded video's sound to CABLE Input (no Windows mixer setup) |
 | `auto_start_obs` | ON | Start OBS if it isn't open (it stays open afterwards) |
 | `auto_start_chrome` | ON | Start the recording Chrome if it isn't open (it stays open afterwards) |
@@ -407,6 +419,7 @@ src/vrec/            application source
   obs_control.py        OBS WebSocket control: connect, audio setup, screenshots
   obs_scene.py           vrec's own OBS scene: create/reuse it, then switch to it and back
   preflight.py           pre-flight check: local test page, screen/window/capture/sound checks
+  vdesktop.py            virtual desktops: find Chrome's window, show it on all desktops
   launcher.py           starting OBS/Chrome themselves if they aren't already open
   display.py            screens and the virtual-display on/off helper
   doctor.py             `vrec --doctor` checks

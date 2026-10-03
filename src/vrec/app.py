@@ -21,7 +21,18 @@ from typing import Any
 import obsws_python as obs
 from playwright.sync_api import Browser, Page
 
-from vrec import display, history, launcher, menu, notify, obs_control, obs_scene, power, preflight
+from vrec import (
+    display,
+    history,
+    launcher,
+    menu,
+    notify,
+    obs_control,
+    obs_scene,
+    power,
+    preflight,
+    vdesktop,
+)
 from vrec.browser import (
     WindowBounds,
     connect_browser,
@@ -83,6 +94,8 @@ class Batch:
     capture_mode: str = "screen"  # what `capture` is: "screen" or "window"
     interactive: bool = False
     kept_awake: bool = False  # this run asked Windows not to sleep
+    chrome_hwnd: int | None = None  # the recording Chrome window, once found
+    pinned_hwnd: int | None = None  # the window vrec pinned to all virtual desktops (to unpin it)
     started_at: float = field(default_factory=time.time)
 
 
@@ -169,9 +182,11 @@ def _run_locked(
             try:
                 _ensure_page(batch)
                 _prepare_window(batch)
+                _pin_window(batch)
                 _preflight(batch)
                 _record_batch(batch, selection)
             finally:
+                _unpin_window(batch)
                 _restore_window(batch)
     except KeyboardInterrupt:
         _handle_keyboard_interrupt(batch)
@@ -296,7 +311,7 @@ def _prepare_scene(batch: Batch) -> None:
     name = batch.settings.obs_scene_name
     mode = batch.settings.obs_capture
     label = "window capture" if mode == "window" else "display capture"
-    setup = obs_scene.ensure_scene(batch.client, name, mode)
+    setup = obs_scene.ensure_scene(batch.client, name, mode, batch.settings.obs_capture_cursor)
     if setup.created_scene:
         print(f"Created the OBS scene '{name}' with a {label} '{setup.capture}'.")
     elif setup.created_capture:
@@ -360,6 +375,8 @@ def _preflight(batch: Batch) -> None:
         can_retarget=bool(batch.capture) and batch.capture_mode == "screen",
         capture_mode=batch.capture_mode if batch.capture else "screen",
         screen=screen,
+        chrome_hwnd=batch.chrome_hwnd,
+        pin_desktops=batch.features.enabled("pin_all_desktops"),
         meter=batch.meter,
         audio_output=batch.settings.audio_output if batch.features.enabled("audio_sink") else "",
         audio_level=batch.settings.audio_level,
@@ -489,6 +506,44 @@ def _prepare_window(batch: Batch) -> None:
         warn(f"Couldn't fullscreen Chrome: {first_line(e)}")
 
 
+_PIN_HINT = (
+    "To switch desktops while recording: Win+Tab, right-click the Chrome window, "
+    '"Show this window on all desktops".'
+)
+
+
+def _pin_window(batch: Batch) -> None:
+    """Show the Chrome window on all virtual desktops (feature pin_all_desktops), so switching desktops
+    doesn't hide it from OBS. Only a pin made here is undone afterwards."""
+    if not batch.features.enabled("pin_all_desktops"):
+        return
+    assert batch.page is not None
+    hwnd = vdesktop.find_chrome_hwnd(batch.page, allow_marker=True)
+    batch.chrome_hwnd = hwnd
+    if batch.pinned_hwnd is not None and batch.pinned_hwnd != hwnd:
+        _unpin_window(batch)  # the tab moved to another window
+    if hwnd is None:
+        warn(f"Couldn't show Chrome on all virtual desktops (window not found). {_PIN_HINT}")
+        return
+    already = vdesktop.is_pinned(hwnd)
+    if already is True:
+        print("Chrome is shown on all virtual desktops while recording: you can switch desktops.")
+        return
+    if vdesktop.pin(hwnd):
+        batch.pinned_hwnd = hwnd
+        print("Chrome is shown on all virtual desktops while recording: you can switch desktops.")
+        return
+    reason = "Windows refused" if already is False else "virtual desktop support unavailable"
+    warn(f"Couldn't show Chrome on all virtual desktops ({reason}). {_PIN_HINT}")
+
+
+def _unpin_window(batch: Batch) -> None:
+    """Undo the pin made by `_pin_window`, if any. Never raises."""
+    hwnd, batch.pinned_hwnd = batch.pinned_hwnd, None
+    if hwnd is not None:
+        vdesktop.unpin(hwnd)
+
+
 def _restore_window(batch: Batch) -> None:
     """Put the Chrome window back where and how it was before `_prepare_window`."""
     # Set by `run()` before any step that touches the window is called.
@@ -515,6 +570,7 @@ def _ensure_page(batch: Batch, redo_window: bool = False) -> None:
         # _prepare_window overwrites the saved window state with the already prepared one: keep the originals.
         bounds, state = batch.initial_bounds, batch.initial_window_state
         _prepare_window(batch)
+        _pin_window(batch)
         batch.initial_bounds = bounds or batch.initial_bounds
         batch.initial_window_state = state or batch.initial_window_state
 
