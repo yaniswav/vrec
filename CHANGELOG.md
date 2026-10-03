@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Keyboard controls during a batch (feature `hotkeys`): `P` pauses and resumes the video and the OBS
+  recording together, `S` skips the video (file named `SKIPPED - <title>`, history unchanged, not a
+  failure), `R` restarts it from the beginning (the partial file is deleted), `Q` stops the batch after
+  the current video (press again to cancel), `H` lists the keys. Off in scheduled runs.
+
 - Working on another virtual desktop while recording (feature `pin_all_desktops`): vrec shows the
   recording Chrome window on all virtual desktops (through `pyvda`, a new dependency) and puts it back
   afterwards, so switching desktops no longer makes OBS film the wallpaper. A new pre-flight line

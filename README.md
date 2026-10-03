@@ -205,6 +205,22 @@ are restored, and the Chrome window is put back the way it was. Videos already f
 as done; the one that was in progress is marked as failed in the history (detail "interrupted"), and
 its file is renamed `INTERRUPTED - <title>`. vrec exits with code 130.
 
+### Keyboard controls
+
+While a batch records (started from a terminal, including `--all` run by hand), these keys work in the
+vrec window, upper or lower case. vrec prints `Keys: P pause, S skip, R restart, Q stop after this video, H help`
+before the first video. They are off in a scheduled run, and with `vrec --disable hotkeys`.
+
+| Key | What it does |
+|---|---|
+| `P` | Pause or resume. The video and the OBS recording pause together, and that time is left out of the recording and of the stall, frozen, black and time-cap checks. |
+| `S` | Skip this video. The partial file is named `SKIPPED - <title>`, its history entry is left as it was, and it isn't counted as a failure. |
+| `R` | Restart this video from the beginning. The partial file is deleted and the video is recorded again. |
+| `Q` | Stop the batch after this video (press again to cancel). The summary still prints. |
+| `H` | Show this list. |
+
+Ctrl+C still stops everything at once.
+
 ### Non-interactive runs
 
 Skip the menu entirely, for scripting or scheduling:
@@ -365,6 +381,7 @@ the single-instance lock (`data\vrec.lock`).
 | `manage_virtual_display` | OFF | Turn the virtual display on before a batch and off after it |
 | `pin_all_desktops` | ON | Show the recording Chrome on all virtual desktops, so you can switch desktops |
 | `desktop_pause` | ON | Pause the recording while Chrome isn't on the current virtual desktop |
+| `hotkeys` | ON | Keyboard controls during a batch: P pause, S skip, R restart, Q stop after this video |
 | `audio_sink` | ON | Send only the recorded video's sound to CABLE Input (no Windows mixer setup) |
 | `auto_start_obs` | ON | Start OBS if it isn't open (it stays open afterwards) |
 | `auto_start_chrome` | ON | Start the recording Chrome if it isn't open (it stays open afterwards) |

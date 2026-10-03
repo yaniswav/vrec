@@ -443,6 +443,39 @@ If you'd rather not be interrupted, fix the pinning (see above) or turn the feat
 `vrec --disable desktop_pause`. A pause that lasts as long as the wall-clock cap (`wall_clock_cap`) still
 ends the video as incomplete.
 
+## Keyboard controls
+
+### "Paused (P to resume)." / "Resumed."
+
+You pressed `P`. The video and the OBS recording are paused together and resume together on the next `P`.
+The time paused is excluded from the recording and from the stall, frozen, black and wall-clock checks.
+If the player is also buffering, or Chrome is off the current virtual desktop, the recording only resumes
+when none of these reasons is left. If OBS refuses to pause, you get "OBS refuses to pause: can't pause
+the recording." and the video keeps playing.
+
+### `-> SKIPPED`
+
+You pressed `S`. The recording is stopped and its file is named `SKIPPED - <title>`. The video's history
+entry is not changed, so it stays to do (or keeps its previous status). It isn't counted as a failure, for
+the exit code or for the 3-errors-in-a-row stop, and the summary counts it as `N skipped`.
+
+### "Restarting this video from the beginning..."
+
+You pressed `R`. The partial file vrec just recorded (only that one) is deleted and the video is recorded
+again from the start. This isn't the lower-quality retry, and you can press `R` as often as you like.
+
+### "Will stop after this video (Q again to cancel)." / "Cancelled: the batch goes on."
+
+`Q` toggles. When the current video is over and `Q` is still on, vrec prints "Stopping the batch as
+requested.", skips the remaining videos (they are untouched) and prints the usual summary. The exit code
+is 1, like any batch that stopped early. Ctrl+C is unchanged: it stops immediately.
+
+### The keys do nothing
+
+They only work when vrec runs in a terminal you can type in, not in a scheduled run (the launcher sets
+`VREC_SCHEDULED`; re-run `vrec --schedule on ...` to refresh an older launcher) and not with
+`vrec --disable hotkeys`. Keys typed before the batch starts are dropped.
+
 ## Batches
 
 ### "Lost connection to Chrome/OBS. Batch stopped; the remaining videos are untouched."
@@ -536,6 +569,11 @@ Loading stalled for too long even after the automatic retry, the video was remov
 mid-recording, the wall-clock safety cap was hit, or OBS stopped recording by itself. The video is
 marked as failed so it comes back up under "Record everything".
 
+### `SKIPPED - <title>`
+
+The video was skipped with `S`. vrec never treats this file as a finished recording. See
+[Keyboard controls](#keyboard-controls).
+
 ### `INTERRUPTED - <title>`
 
 The recording was cut short by Ctrl+C or by an unexpected error partway through. Also marked as failed.
@@ -571,6 +609,7 @@ suffix.
 | `FAILED: incomplete (video removed from page)` | The video disappeared from the page mid-recording. |
 | `FAILED: incomplete (took too long)` | The wall-clock safety cap (`[recording] max_wall_factor` x duration + `max_wall_extra`) was hit. |
 | `FAILED: incomplete (OBS stopped recording)` | OBS stopped recording during the video. vrec checks every 30 seconds. See [OBS stopped recording](#obs-stopped-recording). |
+| `SKIPPED` | You skipped the video with `S`. Not a failure; its history entry is unchanged. |
 | `ERROR: ...` | A problem occurred on the page; the message explains what. |
 
 Several `CHECK` reasons can combine on the same result, e.g. `CHECK: black image?, no audio`. `CHECK`

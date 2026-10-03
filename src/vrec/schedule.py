@@ -120,6 +120,7 @@ def _launcher_script(cwd: Path, command: str) -> str:
         "@echo off",
         "chcp 65001 >nul",
         f'cd /d "{_batch_escape(str(cwd))}"',
+        "set VREC_SCHEDULED=1",
         _batch_escape(command),
         "exit /b %ERRORLEVEL%",
     ]

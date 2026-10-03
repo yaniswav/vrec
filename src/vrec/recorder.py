@@ -19,19 +19,23 @@ from vrec.config import Settings
 from vrec.console import ProgressLine, human_duration, warn
 from vrec.errors import VrecError
 from vrec.features import FeatureSet
+from vrec.hotkeys import Controls
 from vrec.monitor import Output, PlayerState, StopReason, WatchConfig, watch
 from vrec.naming import (
     FAILED_BLACK_PREFIX,
     FAILED_FROZEN_PREFIX,
     INCOMPLETE_PREFIX,
+    SKIPPED_PREFIX,
     TEST_PREFIX,
     clean_title,
+    delete_recording,
     rename_recording,
 )
 from vrec.obs_control import AudioMeter, frame_signature, is_black_frame
 
 __all__ = [
     "INCOMPLETE_REASONS",
+    "NO_TAIL_REASONS",
     "RecordingResult",
     "StopReason",
     "history_status",
@@ -48,6 +52,18 @@ _JS_GET_FORCED_QUALITY = "() => window.__vrecForcedQuality || null"
 # never fully recorded, so it should be retried rather than merely reviewed.
 INCOMPLETE_REASONS = frozenset(
     {StopReason.STALLED, StopReason.VIDEO_GONE, StopReason.TOO_LONG, StopReason.OBS_LOST}
+)
+
+# Reasons after which the recording is already lost or unwanted: no end tail wait.
+NO_TAIL_REASONS = frozenset(
+    {
+        StopReason.BLACK,
+        StopReason.FROZEN,
+        StopReason.STALLED,
+        StopReason.OBS_LOST,
+        StopReason.SKIPPED,
+        StopReason.RESTART,
+    }
 )
 
 
@@ -162,6 +178,7 @@ def record_one(
     test_mode: bool,
     max_height: int = 0,
     window_capture: str | None = None,
+    controls: Controls | None = None,
 ) -> RecordingResult:
     result = RecordingResult(number=number)
     print(f"[{number}/{total}] {title or url}")
@@ -263,6 +280,7 @@ def record_one(
         config,
         Output(warn=warn, progress=line.show, end_progress=line.end),
         visible=visible,
+        keys=(lambda: controls.poll(line.end)) if controls else None,
     )
     result.reason = outcome.reason.value
     result.image_ok = outcome.image_ok
@@ -277,7 +295,7 @@ def record_one(
             f"   {result.desktop_pauses} pause(s) while Chrome wasn't on the current virtual desktop, "
             "excluded from the recording"
         )
-    if outcome.reason not in (StopReason.BLACK, StopReason.FROZEN, StopReason.STALLED, StopReason.OBS_LOST):
+    if outcome.reason not in NO_TAIL_REASONS:
         page.wait_for_timeout(int(settings.tail_s * 1000))
     try:
         path = client.stop_record().output_path
@@ -288,8 +306,15 @@ def record_one(
     if meter and config.audio_check:
         result.audio_ok = meter.peak >= settings.audio_level
 
+    if outcome.reason == StopReason.RESTART:
+        # Restarting: the partial file is of no use. Only the file OBS just returned is deleted.
+        if not delete_recording(path):
+            warn(f"Couldn't delete the partial recording: {Path(path).name}")
+        return result
     if test_mode:
         stem = f"{TEST_PREFIX} - {result.title}"
+    elif outcome.reason == StopReason.SKIPPED:
+        stem = f"{SKIPPED_PREFIX} - {result.title}"
     elif outcome.reason == StopReason.BLACK:
         stem = f"{FAILED_BLACK_PREFIX} - {result.title}"
     elif outcome.reason == StopReason.FROZEN:
@@ -323,6 +348,8 @@ def status_text(result: RecordingResult) -> str:
         return "FAILED: black image (protected video?)"
     if result.reason == StopReason.FROZEN.value:
         return "FAILED: frozen image (OBS isn't filming the video?)"
+    if result.reason == StopReason.SKIPPED.value:
+        return "SKIPPED"
     if result.reason in INCOMPLETE_REASONS:
         return f"FAILED: incomplete ({result.reason})"
     problems = []

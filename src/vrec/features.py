@@ -46,6 +46,9 @@ REGISTRY: tuple[Feature, ...] = (
         "desktop_pause",
         "Pause the recording while Chrome isn't on the current virtual desktop",
     ),
+    Feature(
+        "hotkeys", "Keyboard controls during a batch: P pause, S skip, R restart, Q stop after this video"
+    ),
     Feature("audio_sink", "Send only the recorded video's sound to CABLE Input (no Windows mixer setup)"),
     Feature("auto_start_obs", "Start OBS if it isn't open (it stays open afterwards)"),
     Feature("auto_start_chrome", "Start the recording Chrome if it isn't open (it stays open afterwards)"),
