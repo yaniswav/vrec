@@ -187,6 +187,10 @@ def _selftest() -> int:
     for module in ("vrec.app", "vrec.doctor", "playwright.sync_api", "obsws_python", "PIL.Image", "pyvda"):
         try:
             importlib.import_module(module)
+        except NotImplementedError:
+            # pyvda is bundled but refuses to load on Windows without virtual desktops (Server): fine.
+            if module != "pyvda":
+                raise
         except Exception as e:
             print(f"selftest failed: cannot import {module}: {type(e).__name__}: {e}")
             return 1

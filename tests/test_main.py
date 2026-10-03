@@ -139,3 +139,24 @@ def test_missing_dependency_message_from_source(
     out = capsys.readouterr().out
     assert "No module named 'playwright'" in out
     assert "install.bat" in out
+
+
+def test_selftest_accepts_windows_without_virtual_desktops(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import importlib
+
+    from vrec.__main__ import main
+
+    real_import = importlib.import_module
+
+    def no_desktops(name: str, *args: object) -> object:
+        if name == "pyvda":
+            raise NotImplementedError(
+                "The virtual desktop feature is only available on Windows 10 and later."
+            )
+        return real_import(name, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(importlib, "import_module", no_desktops)
+    assert main(["--selftest"]) == 0
+    assert capsys.readouterr().out.strip() == "selftest ok"
