@@ -49,6 +49,9 @@ REGISTRY: tuple[Feature, ...] = (
     Feature(
         "hotkeys", "Keyboard controls during a batch: P pause, S skip, R restart, Q stop after this video"
     ),
+    Feature(
+        "status_bar", "Keep a 2-line status bar (state, progress, ETA, keys) at the bottom of the terminal"
+    ),
     Feature("audio_sink", "Send only the recorded video's sound to CABLE Input (no Windows mixer setup)"),
     Feature("auto_start_obs", "Start OBS if it isn't open (it stays open afterwards)"),
     Feature("auto_start_chrome", "Start the recording Chrome if it isn't open (it stays open afterwards)"),

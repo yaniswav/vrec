@@ -7,6 +7,12 @@ import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+from vrec.logs import log_only
+
+if TYPE_CHECKING:
+    from vrec.statusbar import StatusBar
 
 
 def human_duration(seconds: float | None) -> str:
@@ -34,17 +40,27 @@ def warn(message: str) -> None:
 class ProgressLine:
     """A status line rewritten in place (with a carriage return) until `end()` is called."""
 
-    def __init__(self) -> None:
+    def __init__(self, bar: StatusBar | None = None) -> None:
         self._width = 0
+        self._bar = bar  # while it is active, the bar shows the progress and only the log gets the line
+
+    def _quiet(self) -> bool:
+        return self._bar is not None and self._bar.active
 
     def show(self, text: str) -> None:
         line = f"   {text}"
-        print(f"\r{line.ljust(self._width)}", end="", flush=True)
+        if self._quiet():
+            log_only(f"\r{line.ljust(self._width)}")
+        else:
+            print(f"\r{line.ljust(self._width)}", end="", flush=True)
         self._width = max(self._width, len(line))
 
     def end(self) -> None:
         if self._width:
-            print()
+            if self._quiet():
+                log_only("\n")
+            else:
+                print()
             self._width = 0
 
 

@@ -221,6 +221,13 @@ before the first video. They are off in a scheduled run, and with `vrec --disabl
 
 Ctrl+C still stops everything at once.
 
+In a terminal, the last two lines of the window stay fixed during a batch (feature `status_bar`). The
+first shows the current video (`3/59`, playing, paused, buffering or away from the virtual desktop, the
+progress, the image size), the batch totals (OK, failed, skipped) and the estimated end time of the whole
+batch. The second lists these keys. Everything else scrolls above them. It is off in a scheduled run, when
+the output isn't a terminal, and with `vrec --disable status_bar`; vrec then prints the usual progress
+line. The log file never contains the bar.
+
 ### Non-interactive runs
 
 Skip the menu entirely, for scripting or scheduling:
@@ -382,6 +389,7 @@ the single-instance lock (`data\vrec.lock`).
 | `pin_all_desktops` | ON | Show the recording Chrome on all virtual desktops, so you can switch desktops |
 | `desktop_pause` | ON | Pause the recording while Chrome isn't on the current virtual desktop |
 | `hotkeys` | ON | Keyboard controls during a batch: P pause, S skip, R restart, Q stop after this video |
+| `status_bar` | ON | Keep a 2-line status bar (state, progress, ETA, keys) at the bottom of the terminal |
 | `audio_sink` | ON | Send only the recorded video's sound to CABLE Input (no Windows mixer setup) |
 | `auto_start_obs` | ON | Start OBS if it isn't open (it stays open afterwards) |
 | `auto_start_chrome` | ON | Start the recording Chrome if it isn't open (it stays open afterwards) |

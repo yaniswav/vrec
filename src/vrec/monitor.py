@@ -164,6 +164,8 @@ class Output:
     progress: Callable[[str], None]
     end_progress: Callable[[], None]
     info: Callable[[str], None] = _say
+    # Structured state for the status bar: status(kind, t=, d=, buffer=, res=). No-op without a bar.
+    status: Callable[..., None] = lambda *args, **kwargs: None
 
 
 class _Holds:
@@ -337,10 +339,13 @@ def watch(
                 resumed_from_pause(now, away_start)
                 output.progress("Chrome is visible again: recording resumed.")
                 output.end_progress()
+        t_now, d_now = state["t"], state["d"] if _known(state["d"]) else None
         if away:
+            output.status("away", t=t_now, d=d_now)
             output.progress("Chrome isn't on the current virtual desktop (recording paused)")
             continue
         if manual:
+            output.status("paused", t=t_now, d=d_now)
             output.progress("Paused (P to resume)")
             continue
 
@@ -355,6 +360,7 @@ def watch(
                 best_buffer, last_growth = buffer, now
             enough = buffer >= min(config.resume_at_s, remaining - 0.5)
             plateaued = now - last_growth >= PLATEAU_S and buffer >= config.pause_below_s + 2
+            output.status("buffering", t=t_now, d=d_now, buffer=buffer)
             output.progress(f"Buffering... {buffer:4.1f} s in reserve (recording paused)")
             if enough or plateaued:
                 release("buffering", now)
@@ -376,6 +382,7 @@ def watch(
                 output.end_progress()
             continue
 
+        output.status("playing", t=t_now, d=d_now, res=(state["w"], state["h"]))
         if _known(video_duration):
             output.progress(
                 f"Playing {state['t'] / video_duration:6.1%}  "
