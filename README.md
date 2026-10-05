@@ -255,6 +255,11 @@ before the first video. They are off in a scheduled run, and with `vrec --disabl
 | `Q` | Stop the batch after this video (press again to cancel). The summary still prints. |
 | `H` | Show this list. |
 
+The keys also work while a video is being prepared (loading the page, waiting for the video to appear and
+load), which can take up to a minute on a slow or video-less page. Nothing is recording yet then: `S` skips
+the video (no file is created, shown as `SKIPPED`), `R` starts preparing it again, `Q` and `H` work as usual,
+and `P` only prints `Nothing to pause yet: the video hasn't started.`
+
 Ctrl+C still stops everything at once.
 
 In a terminal, the last two lines of the window stay fixed during a batch (feature `status_bar`). The

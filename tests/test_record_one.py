@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from vrec import recorder
+from vrec import hotkeys, recorder
 from vrec.config import Settings
 from vrec.features import FeatureSet
 
@@ -18,9 +18,17 @@ class FakePage:
     """Answers each bundled script by name (load_js is patched to return the name)."""
 
     def __init__(
-        self, duration: float = 10.0, forced: str | None = "3840x1920", title: str = "Page | Site"
+        self,
+        duration: float = 10.0,
+        forced: str | None = "3840x1920",
+        title: str = "Page | Site",
+        pick: list[str] | None = None,  # statuses of the first pick attempts, then "found"
+        can_play_after: int = 0,  # wait_can_play checks answered False before True (-1: never)
     ) -> None:
         self.duration, self.forced, self._title = duration, forced, title
+        self.pick, self.can_play_after = list(pick or []), can_play_after
+        self.pick_args: list[float] = []
+        self.can_play_checks = 0
         self.url = ""
         self.now = 1000.0  # fake wall clock, advanced by wait_for_timeout
         self.t = 0.0
@@ -46,13 +54,18 @@ class FakePage:
         if script == recorder.JS_PAUSE:
             self.playing = False
             return None
+        if script == "pick_video.js":
+            self.pick_args.append(arg)
+            status = self.pick.pop(0) if self.pick else "found"
+            return {"status": status, "duration": self.duration} if status == "found" else {"status": status}
+        if script == "wait_can_play.js":
+            self.can_play_checks += 1
+            return self.can_play_after >= 0 and self.can_play_checks > self.can_play_after
         answers: dict[str, Any] = {
-            "pick_video.js": self.duration,
             "fill_window.js": True,
             recorder._JS_GET_FORCED_QUALITY: self.forced,
             "max_quality.js": {"method": "hls.js", "target": 1440},
             "rewind.js": None,
-            "wait_can_play.js": True,
             "resolution.js": [3840, 1920, True],
             "player_requests.js": [],
             "state.js": {
@@ -343,3 +356,117 @@ def test_screen_capture_never_touches_windows(tmp_path, patched, monkeypatch):
     monkeypatch.setattr(recorder.obs_scene, "target_window", lambda *a: pytest.fail("screen mode"))
     result, _ = run(tmp_path, FakePage())
     assert result.reason == "ended"
+
+
+# ---------- keys and waits while the video is being prepared ----------
+
+
+class Keys:
+    """A fake Controls: each poll answers the next scripted command (None when exhausted)."""
+
+    def __init__(self, *commands: str | None) -> None:
+        self.commands = list(commands)
+
+    def poll(self, end_progress: Any = None) -> str | None:
+        return self.commands.pop(0) if self.commands else None
+
+
+def test_pick_finds_the_video_after_a_few_checks(tmp_path, patched):
+    page = FakePage(pick=["none", "loading", "loading"])
+    result, client = run(tmp_path, page)
+    assert result.reason == "ended" and result.duration_s == 10.0
+    assert page.pick_args == [0.0, 0.5, 1.0, 1.5]  # elapsed seconds passed to each attempt
+    assert client.events == ["start", "stop"]
+
+
+def test_pick_times_out_with_no_video(tmp_path, patched):
+    page = FakePage(pick=["none"] * 100)
+    with pytest.raises(recorder.VrecError, match="^No video found on the page$"):
+        run(tmp_path, page)
+    assert page.pick_args[-1] == recorder.PICK_TIMEOUT_S
+    assert page.now == pytest.approx(1000.0 + recorder.PICK_TIMEOUT_S)
+
+
+def test_pick_times_out_when_the_video_does_not_load(tmp_path, patched):
+    with pytest.raises(recorder.VrecError, match="^The video is not loading$"):
+        run(tmp_path, FakePage(pick=["loading"] * 100))
+
+
+def test_pick_hands_over_the_elapsed_time_for_the_muted_kick(tmp_path, patched):
+    page = FakePage(pick=["loading"] * 10)
+    run(tmp_path, page)
+    assert [a for a in page.pick_args if a > 3] == [3.5, 4.0, 4.5, 5.0]
+
+
+def test_can_play_loop_returns_true_when_ready(patched):
+    page = FakePage(can_play_after=3)
+    assert recorder._wait_can_play(page, lambda: None) is True  # type: ignore[arg-type]
+    assert page.can_play_checks == 4
+
+
+def test_can_play_loop_returns_false_on_timeout(patched):
+    page = FakePage(can_play_after=-1)
+    assert recorder._wait_can_play(page, lambda: None) is False  # type: ignore[arg-type]
+    assert page.now == pytest.approx(1000.0 + recorder.CAN_PLAY_TIMEOUT_S)
+
+
+def test_can_play_timeout_does_not_fail_the_recording(tmp_path, patched):
+    result, _ = run(tmp_path, FakePage(can_play_after=-1))
+    assert result.reason == "ended"
+
+
+def test_skip_during_the_pick_wait_never_starts_obs(tmp_path, patched):
+    page = FakePage(pick=["none"] * 100)
+    result, client = run(tmp_path, page, controls=Keys(None, "skip"))  # after goto, then 1st wait
+    assert result.reason == "skipped" and recorder.status_text(result) == "SKIPPED"
+    assert result.file is None and client.events == []
+    assert len(page.pick_args) == 1
+
+
+def test_skip_right_after_goto(tmp_path, patched):
+    page = FakePage()
+    result, client = run(tmp_path, page, controls=Keys("skip"))
+    assert result.reason == "skipped" and client.events == [] and page.pick_args == []
+
+
+def test_skip_while_waiting_for_can_play(tmp_path, patched):
+    page = FakePage(can_play_after=-1)
+    # polls: after goto, after pick, then the first wait inside the can-play loop
+    result, client = run(tmp_path, page, controls=Keys(None, None, "skip"))
+    assert result.reason == "skipped" and client.events == []
+
+
+def test_restart_during_preparation_is_a_restart_result(tmp_path, patched):
+    result, client = run(tmp_path, FakePage(pick=["none"] * 5), controls=Keys(None, "restart"))
+    assert result.reason == "restart requested" and client.events == [] and result.file is None
+
+
+def test_pause_during_preparation_prints_a_note_and_goes_on(tmp_path, patched, capsys):
+    result, _ = run(tmp_path, FakePage(pick=["none"]), controls=Keys(None, "pause"))
+    assert result.reason == "ended"
+    assert "Nothing to pause yet: the video hasn't started." in capsys.readouterr().out
+
+
+def test_quit_and_help_during_preparation_are_answered(tmp_path, patched, capsys):
+    class Reader:
+        def __init__(self, *c: str) -> None:
+            self.c = list(c)
+
+        def poll(self) -> str | None:
+            return self.c.pop(0) if self.c else None
+
+        def flush(self) -> None:
+            pass
+
+    controls = hotkeys.Controls(Reader("quit", "help"))
+    result, _ = run(tmp_path, FakePage(pick=["none", "none"]), controls=controls)
+    out = capsys.readouterr().out
+    assert result.reason == "ended" and controls.quit_requested
+    assert hotkeys.STOP_MESSAGE in out and hotkeys.HELP_LINES[0] in out
+
+
+def test_status_bar_shows_the_preparing_steps(tmp_path, patched):
+    kinds: list[str] = []
+    bar = SimpleNamespace(active=False, set_state=lambda kind, *a, **k: kinds.append(kind))
+    run(tmp_path, FakePage(), bar=bar)
+    assert kinds[:2] == ["loading_page", "waiting_video"]

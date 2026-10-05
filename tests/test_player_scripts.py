@@ -1,4 +1,4 @@
-"""Contract tests for state.js, pick_video.js and resolution.js, run through a small Node harness.
+"""Contract tests for state.js, pick_video.js, wait_can_play.js and resolution.js (Node harness).
 
 recorder.py and monitor.py read these scripts' return values by key/position, so the shapes matter.
 """
@@ -60,14 +60,26 @@ def test_state_is_null_when_the_video_is_gone(out: dict[str, Any]) -> None:
 
 
 def test_pick_video_returns_the_duration_of_the_longest_video(out: dict[str, Any]) -> None:
-    assert out["pickDuration"] == 600
-    assert isinstance(out["pickDuration"], int | float)
+    assert out["pick"] == {"status": "found", "duration": 600}
     assert out["pickedTag"] == "main"
 
 
-def test_pick_video_errors_when_nothing_loads(out: dict[str, Any]) -> None:
-    assert out["pickNone"] == "No video found on the page"
-    assert out["pickStuck"] == "The video is not loading"
+def test_pick_video_statuses_when_nothing_loads(out: dict[str, Any]) -> None:
+    assert out["pickNone"] == {"status": "none"}
+    assert out["pickStuck"] == [{"status": "loading"}] * 2
+    assert out["pickStuckLate"] == [{"status": "loading"}] * 3
+    assert out["stuckNotStored"] is True  # a video that isn't loaded is not stored
+
+
+def test_pick_video_kicks_a_muted_play_once_after_3_seconds(out: dict[str, Any]) -> None:
+    assert out["playsBefore"] == 0
+    assert out["playsAfter"] == 1
+    assert out["stuckMuted"] is True
+
+
+def test_wait_can_play_is_a_quick_ready_check(out: dict[str, Any]) -> None:
+    assert out["canPlayNot"] is False
+    assert out["canPlay"] is True
 
 
 def test_resolution_is_a_width_height_streaming_triple(out: dict[str, Any]) -> None:
