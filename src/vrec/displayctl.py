@@ -1,9 +1,11 @@
-"""`vrec --display on|off|status`: drive the virtual display by hand."""
+"""`vrec --display on|off|status|auto`: drive the virtual display by hand or by watching programs."""
 
 from __future__ import annotations
 
+import csv
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from datetime import datetime
 from pathlib import Path
 
 from vrec import display
@@ -11,6 +13,8 @@ from vrec.display import Runner
 from vrec.errors import VrecError
 from vrec.lock import InstanceLock
 
+WATCH_INTERVAL_S = 5.0
+RECORDING_MESSAGE = "vrec is recording: the virtual display stays on until it ends."
 NOT_INSTALLED = (
     "The virtual display helper isn't installed.",
     "Run once, as administrator: vrec --install-display-helper",
@@ -25,6 +29,20 @@ def batch_running(lock_path: Path) -> bool:
             return False
     except VrecError:
         return True
+
+
+def running_processes(run: Runner = display._run) -> list[str] | None:
+    """Image names of the running processes (`tasklist`), None when the list can't be read."""
+    result = run(["tasklist", "/FO", "CSV", "/NH"])
+    if result.returncode != 0:
+        return None
+    return [row[0] for row in csv.reader(result.stdout.splitlines()) if row]
+
+
+def listed_running(names: Sequence[str], processes: Sequence[str]) -> str | None:
+    """The first running process that is on the list (case-insensitive), as Windows names it."""
+    wanted = {n.lower() for n in names}
+    return next((p for p in processes if p.lower() in wanted), None)
 
 
 def _require_helper() -> None:
@@ -78,3 +96,57 @@ def switch(
             "Virtual display turned on, but no new screen showed up within 15 s. Check: vrec --display status"
         )
     return 0
+
+
+def watch(
+    names: Sequence[str],
+    lock_path: Path,
+    run: Runner = display._run,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], datetime] = datetime.now,
+    interval: float = WATCH_INTERVAL_S,
+) -> int:
+    """Keep the virtual display off while a listed program runs. Stops on Ctrl+C."""
+    if not names:
+        print("Nothing to watch: [display] off_while_running is empty in config.toml.")
+        print('Set it to the programs to wait for, e.g.: off_while_running = ["VALORANT-Win64-Shipping.exe"]')
+        return 1
+    _require_helper()
+    print(f"Watching: {', '.join(names)}. Ctrl+C to stop.")
+
+    def say(text: str) -> None:
+        print(f"[{now():%H:%M}] {text}")
+
+    is_on = display.virtual_display_enabled(run) is not False
+    told_recording = False
+    found: str | None = None
+    try:
+        while True:
+            processes = running_processes(run)
+            if processes is not None:
+                found = listed_running(names, processes)
+            if batch_running(lock_path):
+                if not told_recording:
+                    print(RECORDING_MESSAGE)
+                    told_recording = True
+            else:
+                told_recording = False
+                if found and is_on:
+                    display.set_virtual_display(False, run)
+                    is_on = False
+                    say(f"{found} started: virtual display off.")
+                elif not found and not is_on:
+                    display.set_virtual_display(True, run)
+                    is_on = True
+                    say("No listed program running: virtual display on.")
+            sleep(interval)
+    except KeyboardInterrupt:
+        # Leave the display as it should be: on, unless a listed program still runs.
+        processes = running_processes(run)
+        if processes is not None:
+            found = listed_running(names, processes)
+        if not is_on and not found and not batch_running(lock_path):
+            display.set_virtual_display(True, run)
+            say("No listed program running: virtual display on.")
+        print("Stopped.")
+        return 0

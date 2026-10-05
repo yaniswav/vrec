@@ -297,11 +297,34 @@ Once `vrec --install-display-helper` has been run (as administrator, see
 vrec --display status    # helper installed?, which adapter, on or off, the screens Windows has
 vrec --display on        # turn it on and wait for the screen to appear
 vrec --display off       # turn it off (refused while a vrec batch is recording)
+vrec --display auto      # keep it off while the programs in [display] off_while_running run
 ```
 
 Each one has a double-clickable launcher: `display_status.bat`, `display_on.bat` and `display_off.bat`
 (in `scripts\windows\` and next to `vrec.exe` in the zip). If the helper isn't installed, they say what to
 run: `Run once, as administrator: vrec --install-display-helper`.
+
+**Auto mode.** Some games' anti-cheat refuse to start, or kick you, while a virtual display exists. List
+their process names in `config.toml`:
+
+```toml
+[display]
+off_while_running = ["VALORANT-Win64-Shipping.exe"]
+```
+
+then leave `display_auto.bat` (or `vrec --display auto`) open in a window. Every 5 seconds it looks at the
+running programs, turns the virtual display off when a listed one starts and back on when none runs
+anymore, with one line per change:
+
+```
+[21:04] VALORANT-Win64-Shipping.exe started: virtual display off.
+[23:10] No listed program running: virtual display on.
+```
+
+While a vrec batch is recording it never turns the display off: it says `vrec is recording: the virtual
+display stays on until it ends.` and acts once the batch is over. Ctrl+C stops it and leaves the display
+on, unless a listed program is still running. When a batch starts with `manage_virtual_display` on and a
+listed program is running, vrec only warns: `'<exe>' is running: it may not like the virtual display.`
 
 ### CLI flags
 
@@ -309,7 +332,7 @@ run: `Run once, as administrator: vrec --install-display-helper`.
 vrec [--test] [--data-dir DIR] [--config FILE] [--pause-on-exit] [--launch-chrome]
      [--all | --only LIST] [--doctor] [--features] [--enable NAME...] [--disable NAME...]
      [--schedule ACTION... [--days MON,TUE,...]]
-     [--install-display-helper [PATTERN] | --uninstall-display-helper | --display on|off|status]
+     [--install-display-helper [PATTERN] | --uninstall-display-helper | --display on|off|status|auto]
      [--version]
 ```
 
@@ -330,7 +353,7 @@ vrec [--test] [--data-dir DIR] [--config FILE] [--pause-on-exit] [--launch-chrom
 | `--days MON,TUE,...` | days for `--schedule on` (default: every day) |
 | `--install-display-helper [PATTERN]` | once, as administrator: let vrec turn the virtual display on/off (PATTERN matches the display adapter name, default `*Virtual*`) |
 | `--uninstall-display-helper` | remove what `--install-display-helper` added |
-| `--display on\|off\|status` | turn the virtual display on or off, or show its state (needs the display helper) |
+| `--display on\|off\|status\|auto` | turn the virtual display on or off, show its state, or keep it off while the programs in `[display] off_while_running` run (needs the display helper) |
 | `--version` | print the version and exit |
 
 ## Configuration
@@ -369,6 +392,7 @@ is optional; a missing file or key falls back to the default shown below.
 | `[buffering]` | `max_stall` | `300` | Give up on a video whose loading stays stalled for this many seconds. |
 | `[quality]` | `max_height` | `0` | Highest video height (px) vrec asks the player for; `0` = no cap, always the best. |
 | `[display]` | `screen` | `auto` | Screen the recording Chrome window is moved to (feature `auto_place_window`). `auto` = the largest screen that isn't your main one, or your main screen if it is the only one; or a number (`2`) or a name (`DISPLAY3`). See [docs/virtual-display.md](docs/virtual-display.md). |
+| `[display]` | `off_while_running` | `[]` | Process names (case-insensitive, e.g. `["VALORANT-Win64-Shipping.exe"]`) that don't like a virtual display. `vrec --display auto` turns the virtual display off while one runs and back on after; a batch warns if one is running. See [Virtual display on/off](#virtual-display-onoff). |
 | `[audio]` | `output` | `CABLE Input` | Audio output that receives the recorded video's sound (feature `audio_sink`). Any part of the device name works. |
 
 Environment variables:
@@ -472,7 +496,7 @@ src/vrec/            application source
   lock.py               single-instance lock
   history.py, naming.py, playlist.py, config.py, console.py, menu.py  supporting modules
   js/                    JS snippets injected into the recorded page
-scripts/windows/    install.bat, start.bat, test.bat, launch_chrome.bat, display_on/off/status.bat
+scripts/windows/    install.bat, start.bat, test.bat, launch_chrome.bat, display_on/off/status/auto.bat
 docs/                setup, virtual display, troubleshooting (also in the Windows zip)
 config.example.toml  documented settings template
 videos.example.txt   videos.txt format reference

@@ -92,8 +92,9 @@ def _add_display_arguments(parser: argparse.ArgumentParser) -> None:
     )
     group.add_argument(
         "--display",
-        choices=["on", "off", "status"],
-        help="turn the virtual display on or off, or show its state",
+        choices=["on", "off", "status", "auto"],
+        help="turn the virtual display on or off, show its state, or (auto) keep it off while the "
+        "programs in [display] off_while_running run",
     )
 
 
@@ -127,16 +128,18 @@ def _run_display_helper(args: argparse.Namespace) -> int:
 
 
 def _run_display_control(args: argparse.Namespace) -> int:
-    """Handle --display on|off|status: no OBS/Chrome, no recording."""
+    """Handle --display on|off|status|auto: no OBS/Chrome, no recording."""
     from vrec import displayctl
-    from vrec.config import Paths
+    from vrec.config import Paths, load_settings
     from vrec.errors import VrecError
 
     data_dir = args.data_dir or Path(os.environ.get("VREC_DATA_DIR", "data"))
-    paths = Paths(data_dir=data_dir, config=data_dir / "config.toml")
+    paths = Paths(data_dir=data_dir, config=args.config or (data_dir / "config.toml"))
     try:
         if args.display == "status":
             return displayctl.show_status()
+        if args.display == "auto":
+            return displayctl.watch(load_settings(paths.config).display_off_while_running, paths.lock)
         return displayctl.switch(args.display == "on", paths.lock)
     except VrecError as e:
         print(str(e))

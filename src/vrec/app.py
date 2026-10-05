@@ -23,6 +23,7 @@ from playwright.sync_api import Browser, Page
 
 from vrec import (
     display,
+    displayctl,
     history,
     hotkeys,
     launcher,
@@ -412,6 +413,7 @@ def _virtual_display_on(batch: Batch) -> None:
     """Turn the virtual display on for the batch (feature manage_virtual_display, off by default)."""
     if not batch.features.enabled("manage_virtual_display"):
         return
+    _warn_listed_programs(batch)
     # Ask the device itself: another physical screen must not be mistaken for the virtual one.
     if display.virtual_display_enabled():
         return  # already on: leave it as the user had it
@@ -428,6 +430,16 @@ def _virtual_display_on(batch: Batch) -> None:
         print(f"Virtual display turned on: {screen.describe()}.")
     else:
         warn("The virtual display didn't show up within 15 s. Continuing anyway.")
+
+
+def _warn_listed_programs(batch: Batch) -> None:
+    """Warn (never block) when a program of [display] off_while_running is running."""
+    names = batch.settings.display_off_while_running
+    if not names:
+        return
+    found = displayctl.listed_running(names, displayctl.running_processes() or [])
+    if found:
+        warn(f"'{found}' is running: it may not like the virtual display.")
 
 
 def _virtual_display_off(batch: Batch) -> None:

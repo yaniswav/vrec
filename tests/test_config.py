@@ -123,3 +123,18 @@ def test_abort_if_frozen_after_is_parsed(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text("[checks]\nabort_if_frozen_after = 90\n", encoding="utf-8")
     assert load_settings(path).abort_if_frozen_after_s == 90.0
+
+
+def test_off_while_running_list(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[display]\noff_while_running = ["a.exe", " b.exe "]\n', encoding="utf-8")
+    assert load_settings(path).display_off_while_running == ("a.exe", "b.exe")
+    assert Settings().display_off_while_running == ()
+
+
+@pytest.mark.parametrize("value", ['"a.exe"', "[1, 2]"])
+def test_off_while_running_must_be_a_list_of_text(tmp_path: Path, value: str) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(f"[display]\noff_while_running = {value}\n", encoding="utf-8")
+    with pytest.raises(VrecError, match="off_while_running"):
+        load_settings(path)
