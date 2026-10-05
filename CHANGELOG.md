@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `vrec --setup` and `setup.bat`: a first-run wizard, safe to run again. It creates `data\config.toml`
+  and `data\videos.txt` from the examples (never overwriting), runs the doctor checks for OBS and its
+  WebSocket, VB-CABLE, Chrome and the virtual screen with a one-line fix each, offers to save the OBS
+  password, installs the virtual display helper (only that step asks for administrator rights), walks
+  through the optional features with Keep / on / off, then prints a summary and the next commands.
+- `vrec --features-menu` and `features.bat`: open the features on/off screen directly.
+
 - A fixed 2-line status bar at the bottom of the terminal during a batch (feature `status_bar`): the
   current video's state (playing, paused, buffering, away from the virtual desktop, stopping after this
   video), progress, image size, batch totals, the estimated end time of the whole batch, and the

@@ -3,6 +3,15 @@
 One-time setup for vrec. Do these steps in order; each one is quick, and you won't need to repeat it
 unless you reinstall something.
 
+## The quick way: the setup wizard
+
+After installing the software below, double-click `setup.bat` (in a checkout: `scripts\windows\setup.bat`;
+or run `vrec --setup`). It creates your `data` files, checks that OBS, VB-CABLE, Chrome and the virtual
+screen are found, offers to save the OBS WebSocket password, helps install the virtual display helper
+(administrator permission needed for that step only) and lets you choose the optional features. It is
+safe to run again: it never overwrites a file you already have, and Ctrl+C stops it without saving any
+feature change. The steps below are what it checks.
+
 ## 1. Virtual display
 
 vrec needs a second display that Chrome can be placed on, invisible to your normal desktop use. See
@@ -116,5 +125,5 @@ to in that profile:
 4. Never minimize the window while vrec is running: a minimized window can't be captured or
    controlled correctly.
 
-You're ready to go. Run `vrec --doctor` to check everything above is in place, then see the main
+You're ready to go. Run `setup.bat` (or `vrec --doctor`) to check everything above is in place, then see the main
 [README](../README.md#quick-start) for day-to-day usage.
