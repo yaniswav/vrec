@@ -90,6 +90,11 @@ def _add_display_arguments(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--uninstall-display-helper", action="store_true", help="remove what --install-display-helper added"
     )
+    group.add_argument(
+        "--display",
+        choices=["on", "off", "status"],
+        help="turn the virtual display on or off, or show its state",
+    )
 
 
 def _run_display_helper(args: argparse.Namespace) -> int:
@@ -121,11 +126,31 @@ def _run_display_helper(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_display_control(args: argparse.Namespace) -> int:
+    """Handle --display on|off|status: no OBS/Chrome, no recording."""
+    from vrec import displayctl
+    from vrec.config import Paths
+    from vrec.errors import VrecError
+
+    data_dir = args.data_dir or Path(os.environ.get("VREC_DATA_DIR", "data"))
+    paths = Paths(data_dir=data_dir, config=data_dir / "config.toml")
+    try:
+        if args.display == "status":
+            return displayctl.show_status()
+        return displayctl.switch(args.display == "on", paths.lock)
+    except VrecError as e:
+        print(str(e))
+        return 1
+    except KeyboardInterrupt:
+        print("Stopped.")
+        return 130
+
+
 def _like(name: str, pattern: str) -> bool:
     """PowerShell-style -like matching (case-insensitive wildcards), as the helper script uses."""
-    from fnmatch import fnmatchcase
+    from vrec import display
 
-    return fnmatchcase(name.lower(), pattern.lower())
+    return display.like(name, pattern)
 
 
 def _run_features(args: argparse.Namespace, data_dir: Path) -> int:
@@ -224,6 +249,8 @@ def _run(args: argparse.Namespace, argv: list[str]) -> int:
         return _run_schedule(args)
     if args.install_display_helper or args.uninstall_display_helper:
         return _run_display_helper(args)
+    if args.display:
+        return _run_display_control(args)
 
     data_dir = args.data_dir or Path(os.environ.get("VREC_DATA_DIR", "data"))
     data_dir.mkdir(parents=True, exist_ok=True)

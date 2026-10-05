@@ -288,13 +288,29 @@ video's sound is routed, Chrome's debug port, and which screen recording will us
 a non-zero code if any check failed. Run it first whenever something looks wrong, and include its
 output in a bug report.
 
+### Virtual display on/off
+
+Once `vrec --install-display-helper` has been run (as administrator, see
+[docs/virtual-display.md](docs/virtual-display.md)), you can switch the virtual display yourself:
+
+```
+vrec --display status    # helper installed?, which adapter, on or off, the screens Windows has
+vrec --display on        # turn it on and wait for the screen to appear
+vrec --display off       # turn it off (refused while a vrec batch is recording)
+```
+
+Each one has a double-clickable launcher: `display_status.bat`, `display_on.bat` and `display_off.bat`
+(in `scripts\windows\` and next to `vrec.exe` in the zip). If the helper isn't installed, they say what to
+run: `Run once, as administrator: vrec --install-display-helper`.
+
 ### CLI flags
 
 ```
 vrec [--test] [--data-dir DIR] [--config FILE] [--pause-on-exit] [--launch-chrome]
      [--all | --only LIST] [--doctor] [--features] [--enable NAME...] [--disable NAME...]
      [--schedule ACTION... [--days MON,TUE,...]]
-     [--install-display-helper [PATTERN] | --uninstall-display-helper] [--version]
+     [--install-display-helper [PATTERN] | --uninstall-display-helper | --display on|off|status]
+     [--version]
 ```
 
 | Flag | Meaning |
@@ -314,6 +330,7 @@ vrec [--test] [--data-dir DIR] [--config FILE] [--pause-on-exit] [--launch-chrom
 | `--days MON,TUE,...` | days for `--schedule on` (default: every day) |
 | `--install-display-helper [PATTERN]` | once, as administrator: let vrec turn the virtual display on/off (PATTERN matches the display adapter name, default `*Virtual*`) |
 | `--uninstall-display-helper` | remove what `--install-display-helper` added |
+| `--display on\|off\|status` | turn the virtual display on or off, or show its state (needs the display helper) |
 | `--version` | print the version and exit |
 
 ## Configuration
@@ -447,6 +464,7 @@ src/vrec/            application source
   vdesktop.py            virtual desktops: find Chrome's window, show it on all desktops
   launcher.py           starting OBS/Chrome themselves if they aren't already open
   display.py            screens and the virtual-display on/off helper
+  displayctl.py         `vrec --display` (on, off, status)
   doctor.py             `vrec --doctor` checks
   schedule.py           `vrec --schedule` (Windows Task Scheduler)
   features.py           feature toggle registry and data/features.toml
@@ -454,7 +472,7 @@ src/vrec/            application source
   lock.py               single-instance lock
   history.py, naming.py, playlist.py, config.py, console.py, menu.py  supporting modules
   js/                    JS snippets injected into the recorded page
-scripts/windows/    install.bat, start.bat, test.bat, launch_chrome.bat
+scripts/windows/    install.bat, start.bat, test.bat, launch_chrome.bat, display_on/off/status.bat
 docs/                setup, virtual display, troubleshooting (also in the Windows zip)
 config.example.toml  documented settings template
 videos.example.txt   videos.txt format reference

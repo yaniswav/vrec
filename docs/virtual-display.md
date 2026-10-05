@@ -129,6 +129,20 @@ it as it found it. It tells the virtual display apart from a real second monitor
 that adapter's own status, not by guessing from the screen list (see
 [Choosing the right screen](#choosing-the-right-screen) above).
 
+Once the helper is installed you can also switch the virtual display by hand, with no administrator
+prompt:
+
+```
+vrec --display status
+vrec --display on
+vrec --display off
+```
+
+`status` shows whether the helper is installed, which adapter(s) it switches, whether the virtual
+display is on, and the screens Windows has right now. `on` waits for the new screen to appear and
+reports it. `off` is refused while a vrec batch is recording. The same commands are available as
+`display_status.bat`, `display_on.bat` and `display_off.bat` (double-click them).
+
 To remove the scheduled tasks and the helper script (also the old `%LOCALAPPDATA%\vrec` copies):
 
 ```
