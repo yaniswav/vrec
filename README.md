@@ -146,9 +146,12 @@ Checking everything before recording...
 1. Download `vrec-<version>-windows.zip` from the [Releases page](https://github.com/yaniswav/vrec/releases)
    and unzip it anywhere.
 2. Do the one-time setup in [docs/setup-windows.md](docs/setup-windows.md) (OBS, Chrome, VB-CABLE).
-3. Copy `videos.example.txt` to `data\videos.txt` next to `vrec.exe` and add your links.
+3. Double-click `setup.bat`. The wizard creates `data\config.toml` and `data\videos.txt` from the
+   examples, checks OBS, VB-CABLE, Chrome and the virtual screen, and walks you through the optional
+   features. Then put your links in `data\videos.txt`.
 4. Double-click `launch_chrome.bat`, log in to the site if needed, then double-click `test.bat`.
-   `doctor.bat` checks your setup and `start.bat` records your list.
+   `doctor.bat` checks your setup, `features.bat` turns features on or off, and `start.bat` records
+   your list.
 
 The zip also holds the `docs` folder, so the links to the setup guides work offline. To check that a
 download is intact, download `SHA256SUMS.txt` from the same release, then in PowerShell:
@@ -164,7 +167,8 @@ again and unzip it into a fresh folder.
 ### With Python
 
 1. Follow the one-time setup: [docs/setup-windows.md](docs/setup-windows.md).
-2. Run `scripts\windows\install.bat` to install vrec and its dependencies.
+2. Run `scripts\windows\install.bat` to install vrec and its dependencies, then
+   `scripts\windows\setup.bat`: the first-run wizard (see [Setup wizard](#setup-wizard) below).
 3. Put your links in `data\videos.txt` (see [videos.example.txt](videos.example.txt) for the format).
    A link listed twice is recorded once. Duplicates ignore tracking parameters (`utm_*`, `fbclid`,
    `gclid`, `ref`, `ref_src`, `si`, `feature`); links that differ in any other query parameter (for
@@ -173,6 +177,38 @@ again and unzip it into a fresh folder.
    it reports as `[FAIL]` before continuing.
 5. Run `scripts\windows\test.bat` for a quick 30-second test and diagnostic.
 6. Run `scripts\windows\start.bat` to record your list.
+
+### Setup wizard
+
+`setup.bat` (`vrec --setup`) is safe to run again at any time. It never overwrites a file you already
+have. Five steps, each question showing its default in brackets (press Enter to accept it):
+
+1. Files: creates `data\`, `data\config.toml` and `data\videos.txt` from the examples when missing.
+2. Requirements: runs the doctor checks for OBS and its WebSocket, VB-CABLE, Chrome and the virtual
+   screen, each with a one-line fix. If no OBS WebSocket password is saved, it offers to save it.
+3. Virtual display control (optional): explains the `manage_virtual_display` feature and, if the helper
+   isn't installed, offers to install it. That needs administrator rights, so only that step is
+   relaunched with a Windows permission prompt.
+4. Features: goes through the optional features one by one with `Keep / on / off` (Enter keeps the
+   current value), then saves once.
+5. Summary: what is ready, what is left, and the next commands.
+
+Ctrl+C stops at any point and saves no feature changes. Without a keyboard (input redirected) it only
+prints the checks.
+
+### The `.bat` launchers
+
+| File | What it does |
+|---|---|
+| `setup.bat` | first-run wizard (`vrec --setup`) |
+| `launch_chrome.bat` | open the recording Chrome on the virtual screen, to log in |
+| `test.bat` | record 30 seconds of the first video and run a diagnostic |
+| `start.bat` | the menu, then record your list |
+| `doctor.bat` | check your setup without recording (release zip only; otherwise `vrec --doctor`) |
+| `features.bat` | the features on/off screen (`vrec --features-menu`) |
+
+In the release zip they sit next to `vrec.exe`; in a checkout they are in `scripts\windows\`
+(`install.bat` is only there).
 
 You don't need to open OBS or the recording Chrome by hand first: by default vrec starts OBS itself if
 it isn't already open (feature `auto_start_obs`), and also starts the recording Chrome itself if its
@@ -330,6 +366,7 @@ listed program is running, vrec only warns: `'<exe>' is running: it may not like
 
 ```
 vrec [--test] [--data-dir DIR] [--config FILE] [--pause-on-exit] [--launch-chrome]
+     [--setup] [--features-menu]
      [--all | --only LIST] [--doctor] [--features] [--enable NAME...] [--disable NAME...]
      [--schedule ACTION... [--days MON,TUE,...]]
      [--install-display-helper [PATTERN] | --uninstall-display-helper | --display on|off|status|auto]
@@ -346,6 +383,8 @@ vrec [--test] [--data-dir DIR] [--config FILE] [--pause-on-exit] [--launch-chrom
 | `--all` | record every video still to do (NEW/FAILED), no menu |
 | `--only LIST` | record exactly these numbers, e.g. `3,1,5-8`, no menu |
 | `--doctor` | check your setup (OBS, Chrome, disk...) without recording |
+| `--setup` | first-run wizard: files, requirements, virtual display control, features, summary |
+| `--features-menu` | open the interactive features on/off screen (a plain list when there is no keyboard) |
 | `--features` | show which optional features are on or off, then exit |
 | `--enable NAME [NAME ...]` | turn one or more features on |
 | `--disable NAME [NAME ...]` | turn one or more features off |
@@ -496,7 +535,8 @@ src/vrec/            application source
   lock.py               single-instance lock
   history.py, naming.py, playlist.py, config.py, console.py, menu.py  supporting modules
   js/                    JS snippets injected into the recorded page
-scripts/windows/    install.bat, start.bat, test.bat, launch_chrome.bat, display_on/off/status/auto.bat
+scripts/windows/    install.bat, setup.bat, start.bat, test.bat, launch_chrome.bat, features.bat,
+                    display_on/off/status/auto.bat
 docs/                setup, virtual display, troubleshooting (also in the Windows zip)
 config.example.toml  documented settings template
 videos.example.txt   videos.txt format reference

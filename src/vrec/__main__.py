@@ -47,6 +47,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--disable", nargs="+", metavar="NAME", default=None, help="turn one or more features off"
     )
+    _add_setup_arguments(parser)
     parser.add_argument("--version", action="version", version=f"vrec {__version__}")
     parser.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
     _add_schedule_arguments(parser)
@@ -59,6 +60,46 @@ def _build_parser() -> argparse.ArgumentParser:
         help="open the recording Chrome on the virtual screen (e.g. to log in), then exit",
     )
     return parser
+
+
+def _add_setup_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--setup", action="store_true", help="first-run wizard: files, requirements, display, features"
+    )
+    parser.add_argument(
+        "--features-menu",
+        action="store_true",
+        help="open the interactive features on/off screen (a plain list when there is no keyboard)",
+    )
+
+
+def _run_setup(args: argparse.Namespace) -> int:
+    """Handle --setup: the wizard creates the data folder itself, no OBS/Chrome, no instance lock."""
+    from vrec.setup_wizard import run_setup
+
+    data_dir = args.data_dir or Path(os.environ.get("VREC_DATA_DIR", "data"))
+    return run_setup(data_dir, args.config)
+
+
+def _run_features_menu(args: argparse.Namespace, data_dir: Path) -> int:
+    """Handle --features-menu: the menu's "Features on/off" screen on its own."""
+    if not (sys.stdin and sys.stdin.isatty()):
+        return _run_features(args, data_dir)  # no keyboard: just list them
+    from vrec.config import Paths
+    from vrec.errors import VrecError
+    from vrec.features import load_features
+    from vrec.menu import _features_menu
+
+    paths = Paths(data_dir=data_dir, config=data_dir / "config.toml")
+    try:
+        features, warnings = load_features(paths.features)
+    except VrecError as e:
+        print(str(e))
+        return 1
+    for message in warnings:
+        print(message)
+    _features_menu(features, paths.features)
+    return 0
 
 
 def _add_selection_arguments(parser: argparse.ArgumentParser) -> None:
@@ -255,9 +296,14 @@ def _run(args: argparse.Namespace, argv: list[str]) -> int:
     if args.display:
         return _run_display_control(args)
 
+    if args.setup:
+        return _run_setup(args)
+
     data_dir = args.data_dir or Path(os.environ.get("VREC_DATA_DIR", "data"))
     data_dir.mkdir(parents=True, exist_ok=True)
 
+    if args.features_menu:
+        return _run_features_menu(args, data_dir)
     if args.features or args.enable or args.disable:
         return _run_features(args, data_dir)
 

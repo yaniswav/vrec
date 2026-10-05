@@ -269,6 +269,35 @@ vrec needs the password but has no saved one and no keyboard to ask on (a schedu
 redirected from a file). Run `vrec` once by hand in a normal terminal and type the password, or set the
 `VREC_OBS_PASSWORD` environment variable.
 
+### Setup wizard (`setup.bat`, `vrec --setup`)
+
+Run it again whenever something changes; it never overwrites an existing file.
+
+- **"No keyboard available: showing the checks only."** The wizard needs to ask questions, but its
+  input is redirected or there is no console. Run `setup.bat` by double-clicking it or from a normal
+  terminal.
+- **"videos.txt still holds the example links: replace them with your own."** `data\videos.txt` is
+  still the copy of `videos.example.txt`. Open it and put your own links in.
+- **"Can't create ...: ... not found next to vrec."** The example file is missing from the download.
+  Download the zip again, or copy the file by hand.
+- **"No display adapter matches '*Virtual*': skipped."** Your virtual display driver isn't called
+  "Virtual". See [virtual-display.md](virtual-display.md), then run
+  `vrec --install-display-helper "*YourName*"` from an administrator terminal.
+- **"The administrator step didn't run (cancelled or refused)."** You answered No to the Windows
+  permission prompt, or the account can't elevate. Run `vrec --install-display-helper` from an
+  administrator terminal instead.
+- **"The helper still isn't installed."** The administrator step ended without installing it. Read its
+  window for the reason (it stays open until you press Enter), then run the wizard again.
+- **"Steps 3 and 4 skipped: fix or delete ... first."** `data\features.toml` isn't valid TOML. Fix it
+  or delete it (features go back to their defaults).
+- **"Setup stopped. No feature changes were saved."** You pressed Ctrl+C. Files created in step 1 and
+  a saved OBS password are kept.
+
+### `features.bat` (`vrec --features-menu`)
+
+Opens the same "Features on/off" screen as the start menu: type numbers to switch features, Enter to
+leave. Each change is saved at once. Without a keyboard it prints the plain list, like `--features`.
+
 ### "Couldn't stop the OBS recording: ... Stop it in OBS."
 
 At the end of a run, or on Ctrl+C, vrec tried to stop the OBS recording and OBS didn't confirm it. The

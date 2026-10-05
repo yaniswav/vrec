@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `vrec --setup` and `setup.bat`: a first-run wizard, safe to run again. It creates `data\config.toml`
+  and `data\videos.txt` from the examples (never overwriting), runs the doctor checks for OBS and its
+  WebSocket, VB-CABLE, Chrome and the virtual screen with a one-line fix each, offers to save the OBS
+  password, installs the virtual display helper (only that step asks for administrator rights), walks
+  through the optional features with Keep / on / off, then prints a summary and the next commands.
+- `vrec --features-menu` and `features.bat`: open the features on/off screen directly.
 - `vrec --display auto`: a watcher that turns the virtual display off while a program listed in
   `[display] off_while_running` runs (for games whose anti-cheat dislike a virtual display) and back on
   when none runs anymore, printing one line per change. It never turns the display off during a batch,
