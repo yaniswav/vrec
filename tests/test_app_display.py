@@ -165,3 +165,21 @@ def test_uninstall_display_helper_cli(monkeypatch, capsys):
     monkeypatch.setattr(app.display, "uninstall_helper", lambda: calls.append(True))
     assert cli.main(["--uninstall-display-helper"]) == 0
     assert calls == [True]
+
+
+def _listed_batch(tmp_path, monkeypatch, running):
+    monkeypatch.setattr(app.displayctl, "running_processes", lambda: running)
+    monkeypatch.setattr(app.display, "virtual_display_enabled", lambda: True)
+    batch = make_batch(tmp_path, manage_virtual_display=True)
+    batch.settings = Settings(display_off_while_running=("game.exe",))
+    return batch
+
+
+def test_warns_when_a_listed_program_is_running(tmp_path, monkeypatch, capsys):
+    app._virtual_display_on(_listed_batch(tmp_path, monkeypatch, ["Game.exe"]))
+    assert "'Game.exe' is running: it may not like the virtual display." in capsys.readouterr().out
+
+
+def test_no_warning_when_it_is_not_running(tmp_path, monkeypatch, capsys):
+    app._virtual_display_on(_listed_batch(tmp_path, monkeypatch, None))
+    assert "may not like" not in capsys.readouterr().out

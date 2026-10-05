@@ -39,6 +39,7 @@ class Settings:
     max_stall_s: float = 300
     max_height: int = 0
     display_screen: str = "auto"
+    display_off_while_running: tuple[str, ...] = ()
     audio_output: str = "CABLE Input"
     max_wall_factor: float = 3
     max_wall_extra_s: float = 600
@@ -128,6 +129,7 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
     },
     "display": {
         "screen": ("display_screen", str),
+        "off_while_running": ("display_off_while_running", list),
     },
     "audio": {
         "output": ("audio_output", str),
@@ -184,4 +186,8 @@ def _coerce(section: str, key: str, value: object, field_type: type) -> object:
         if not isinstance(value, str):
             raise VrecError(f"Invalid value for [{section}] {key}: expected text")
         return value
+    if field_type is list:
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise VrecError(f"Invalid value for [{section}] {key}: expected a list of text values")
+        return tuple(item.strip() for item in value if item.strip())
     return value

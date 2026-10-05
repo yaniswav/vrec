@@ -539,6 +539,43 @@ is needed again: vrec triggers the scheduled tasks it created without a prompt.
 were removed, e.g. by `--uninstall-display-helper`). Run it once as administrator, or see
 [virtual-display.md](virtual-display.md).
 
+### "The virtual display helper isn't installed." (from `vrec --display`)
+
+```
+The virtual display helper isn't installed.
+Run once, as administrator: vrec --install-display-helper
+```
+
+`vrec --display on|off|status` (and `display_on.bat`, `display_off.bat`) need the helper. Run the
+command shown once in a terminal opened with "Run as administrator". If your virtual adapter isn't
+named "Virtual", pass part of its name, as the second line says.
+
+### "A vrec batch is recording: not turning the virtual display off."
+
+`vrec --display off` refuses to run while a vrec batch holds the instance lock, because turning the
+display off would ruin the recording. Wait for the batch to end (or stop it), then run it again.
+
+### "Virtual display turned on, but no new screen showed up within 15 s: check vrec --display status."
+
+The helper ran, but Windows didn't list a new screen in time. Run `vrec --display status` to see the
+adapter state and the screens, and check the adapter in Device Manager.
+
+### "Nothing to watch: [display] off_while_running is empty in config.toml."
+
+`vrec --display auto` needs the programs to wait for. Add their process names to `data\config.toml`,
+for example `off_while_running = ["VALORANT-Win64-Shipping.exe"]` under `[display]`. Names are matched
+without regard to case, and must be the exact name shown in Task Manager (Details tab).
+
+### "vrec is recording: the virtual display stays on until it ends."
+
+`vrec --display auto` found a vrec batch running, so it won't turn the display off, even if a listed
+program is running. It acts again by itself once the batch ends.
+
+### "'<exe>' is running: it may not like the virtual display."
+
+A batch started with `manage_virtual_display` on while a program from `[display] off_while_running` was
+running. It is only a warning: the batch goes on. Close the program, or its anti-cheat may complain.
+
 ## Feature toggles
 
 ### "Unknown feature in features.toml, ignored: ..." / "Feature '...' in features.toml isn't true/false, ignored: ..."

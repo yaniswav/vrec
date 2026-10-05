@@ -96,6 +96,11 @@ max_height = 0
 # "auto" = the largest screen that isn't your main one, or your main screen if it is the only one;
 # or a number ("2") or a name ("DISPLAY3").
 screen = "auto"
+# Programs that don't like a virtual display (some games' anti-cheat). `vrec --display auto` turns the
+# virtual display off while one of them runs and back on afterwards; a batch warns if one is running.
+# Process names, case-insensitive, as Task Manager shows them (Details tab).
+# Example: off_while_running = ["VALORANT-Win64-Shipping.exe"]
+off_while_running = []
 
 [audio]
 # Audio output that receives the recorded video's sound (feature audio_sink).

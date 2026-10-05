@@ -304,6 +304,26 @@ def virtual_display_enabled(run: Runner = _run) -> bool | None:
     return "ok" in statuses
 
 
+def like(name: str, pattern: str) -> bool:
+    """PowerShell-style -like matching (case-insensitive wildcards), as the helper script uses."""
+    from fnmatch import fnmatchcase
+
+    return fnmatchcase(name.lower(), pattern.lower())
+
+
+def helper_installed() -> bool:
+    return helper_script_path().exists() and helper_pattern_path().exists()
+
+
+def switched_devices(run: Runner = _run) -> list[str]:
+    """Display adapters the installed helper switches (empty when it isn't installed)."""
+    try:
+        pattern = helper_pattern_path().read_text(encoding="utf-8").strip()
+    except OSError:
+        return []
+    return [d for d in list_display_devices(run) if like(d, pattern)]
+
+
 def is_admin() -> bool:
     if sys.platform == "win32":
         import ctypes

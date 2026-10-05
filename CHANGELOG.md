@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `vrec --display auto`: a watcher that turns the virtual display off while a program listed in
+  `[display] off_while_running` runs (for games whose anti-cheat dislike a virtual display) and back on
+  when none runs anymore, printing one line per change. It never turns the display off during a batch,
+  and Ctrl+C leaves the display on unless a listed program still runs. A batch now also warns when such
+  a program is running. New launcher `display_auto.bat`.
+- `vrec --display on|off|status` turns the virtual display on or off, or shows its state (helper, adapter,
+  on/off, screens), without starting OBS or Chrome. `off` is refused while a batch is recording, and the
+  commands say what to run if the display helper isn't installed. New launchers `display_on.bat`,
+  `display_off.bat` and `display_status.bat` (dev checkout and release zip).
 - A fixed 2-line status bar at the bottom of the terminal during a batch (feature `status_bar`): the
   current video's state (playing, paused, buffering, away from the virtual desktop, stopping after this
   video), progress, image size, batch totals, the estimated end time of the whole batch, and the
