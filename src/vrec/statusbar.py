@@ -31,6 +31,7 @@ KEYS_HOTKEYS_ARMED = "[P] Pause  [S] Skip  [R] Restart  [Q] Cancel the stop  [H]
 KEYS_NONE = "Ctrl+C to stop"
 
 LOADING, PLAYING, PAUSED, BUFFERING, AWAY = "loading", "playing", "paused", "buffering", "away"
+LOADING_PAGE, WAITING_VIDEO = "loading_page", "waiting_video"
 
 _UNICODE = {"sep": "│", PLAYING: "▶", PAUSED: "⏸", BUFFERING: "⏳"}
 _ASCII = {"sep": "|", PLAYING: ">", PAUSED: "||", BUFFERING: "..."}
@@ -139,6 +140,8 @@ class StatusBar:
             PAUSED: ("Paused", sym[PAUSED]),
             BUFFERING: (f"Buffering {self._buffer or 0:.1f} s", sym[BUFFERING]),
             AWAY: ("Away (Chrome not on this desktop)", "!"),
+            LOADING_PAGE: ("Preparing (loading the page)", sym[PLAYING]),
+            WAITING_VIDEO: ("Preparing (waiting for the video)", sym[PLAYING]),
         }.get(self._kind, ("Preparing", sym[PLAYING]))
         stopping = self._stopping()
         parts = [f"{symbol} {self._number}/{self._total}  {state}"]

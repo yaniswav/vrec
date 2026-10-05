@@ -419,3 +419,16 @@ def test_no_bar_changes_the_hotkeys_line(tmp_path, capsys):
     app._record_batch(batch, [("https://x/1", "A")], record=hotkeys_record([make_result()]))
     assert "Keys: P pause" in capsys.readouterr().out  # inactive bar: today's line
     assert Path(tmp_path).exists()
+
+
+@pytest.mark.parametrize(
+    ("kind", "text"),
+    [
+        ("loading_page", "Preparing (loading the page)"),
+        ("waiting_video", "Preparing (waiting for the video)"),
+    ],
+)
+def test_preparing_steps(kind, text):
+    bar, *_ = started()
+    bar.set_state(kind)
+    assert bar.lines()[0].startswith(f"▶ 3/59  {text}")

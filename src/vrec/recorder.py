@@ -13,7 +13,7 @@ from typing import cast
 import obsws_python as obs
 from playwright.sync_api import Page
 
-from vrec import history, obs_scene, vdesktop
+from vrec import history, hotkeys, obs_scene, vdesktop
 from vrec.browser import document_script, load_js, route_audio_to
 from vrec.config import Settings
 from vrec.console import ProgressLine, human_duration, warn
@@ -32,7 +32,7 @@ from vrec.naming import (
     rename_recording,
 )
 from vrec.obs_control import AudioMeter, frame_signature, is_black_frame
-from vrec.statusbar import StatusBar
+from vrec.statusbar import LOADING_PAGE, WAITING_VIDEO, StatusBar
 
 __all__ = [
     "INCOMPLETE_REASONS",
@@ -48,6 +48,11 @@ __all__ = [
 JS_PLAY = "() => { window.__vrecVideo.play().catch(() => {}); }"
 JS_PAUSE = "() => { window.__vrecVideo.pause(); }"
 _JS_GET_FORCED_QUALITY = "() => window.__vrecForcedQuality || null"
+
+PICK_TIMEOUT_S = 30.0
+CAN_PLAY_TIMEOUT_S = 20.0
+CHECK_EVERY_MS = 500
+NOTHING_TO_PAUSE = "Nothing to pause yet: the video hasn't started."
 
 # Reasons that mean the recording is missing part of the video, not just unverified:
 # never fully recorded, so it should be retried rather than merely reviewed.
@@ -83,6 +88,43 @@ class RecordingResult:
     buffering_pauses: int = 0
     desktop_pauses: int = 0
     duration_s: float = 0.0  # length of the video (0 = unknown)
+
+
+class _Interrupted(Exception):
+    """S or R pressed while the video was still being prepared (nothing is recording yet)."""
+
+    def __init__(self, reason: StopReason) -> None:
+        super().__init__(reason.value)
+        self.reason = reason
+
+
+def _pick_video(page: Page, check: Callable[[], None]) -> float | None:
+    """Wait up to 30 s for the main video, checking the keys between two short checks."""
+    waited = 0.0
+    while True:
+        picked = page.evaluate(load_js("pick_video.js"), waited)
+        if picked["status"] == "found":
+            return cast("float | None", picked.get("duration"))
+        if waited >= PICK_TIMEOUT_S:
+            break
+        page.wait_for_timeout(CHECK_EVERY_MS)
+        waited += CHECK_EVERY_MS / 1000
+        check()
+    raise VrecError(
+        "No video found on the page" if picked["status"] == "none" else "The video is not loading"
+    )
+
+
+def _wait_can_play(page: Page, check: Callable[[], None]) -> bool:
+    """Wait up to 20 s for the video to play without stalling. False on timeout."""
+    waited = 0.0
+    while not page.evaluate(load_js("wait_can_play.js")):
+        if waited >= CAN_PLAY_TIMEOUT_S:
+            return False
+        page.wait_for_timeout(CHECK_EVERY_MS)
+        waited += CHECK_EVERY_MS / 1000
+        check()
+    return True
 
 
 class _PagePlayer:
@@ -182,14 +224,74 @@ def record_one(
     controls: Controls | None = None,
     bar: StatusBar | None = None,
 ) -> RecordingResult:
+    """Record one video. S or R during the preparation ends it early, before OBS records anything."""
+
+    def check() -> None:
+        command = controls.poll() if controls else None
+        if command == hotkeys.SKIP:
+            raise _Interrupted(StopReason.SKIPPED)
+        if command == hotkeys.RESTART:
+            raise _Interrupted(StopReason.RESTART)
+        if command == hotkeys.PAUSE:
+            print(f"   {NOTHING_TO_PAUSE}")
+
+    try:
+        return _record(
+            page,
+            client,
+            meter,
+            scene,
+            settings,
+            features,
+            number,
+            total,
+            url,
+            title,
+            test_mode,
+            max_height,
+            window_capture,
+            controls,
+            bar,
+            check,
+        )
+    except _Interrupted as stop:
+        return RecordingResult(number=number, title=title or "", reason=stop.reason.value)
+
+
+def _record(
+    page: Page,
+    client: obs.ReqClient,
+    meter: AudioMeter | None,
+    scene: str,
+    settings: Settings,
+    features: FeatureSet,
+    number: int,
+    total: int,
+    url: str,
+    title: str | None,
+    test_mode: bool,
+    max_height: int,
+    window_capture: str | None,
+    controls: Controls | None,
+    bar: StatusBar | None,
+    check: Callable[[], None],
+) -> RecordingResult:
     result = RecordingResult(number=number)
     print(f"[{number}/{total}] {title or url}")
     force_quality = features.enabled("quality_filter")
 
+    def state(kind: str) -> None:
+        if bar:
+            bar.set_state(kind)
+
     # The quality filter reads this cap when the player fetches its list of qualities.
+    state(LOADING_PAGE)
     with document_script(page, f"window.__vrecMaxHeight = {int(max_height)};"):
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    duration = page.evaluate(load_js("pick_video.js"))
+    check()
+    state(WAITING_VIDEO)
+    duration = _pick_video(page, check)
+    check()
     if isinstance(duration, int | float) and math.isfinite(duration) and duration > 0:
         result.duration_s = float(duration)
     result.title = title or clean_title(page.title())
@@ -228,8 +330,9 @@ def record_one(
     # Rewinding makes the player reload the video, now at the chosen quality.
     page.wait_for_timeout(int(settings.fullscreen_settle_s * 1000))
     page.evaluate(load_js("rewind.js"))
-    page.evaluate(load_js("wait_can_play.js"))
+    _wait_can_play(page, check)
     page.wait_for_timeout(1000)
+    check()
     width, height, streaming = page.evaluate(load_js("resolution.js"))
     print(f"   Received image: {width}x{height}")
     if force_quality and streaming and not forced:
@@ -249,6 +352,7 @@ def record_one(
         def follow() -> None:
             obs_scene.target_window(client, window_capture, page.title())
 
+    check()
     client.start_record()
     page.wait_for_timeout(int(settings.lead_in_s * 1000))
     if meter:

@@ -1,4 +1,4 @@
-// Runs state.js, pick_video.js and resolution.js against fake video elements and prints JSON.
+// Runs state.js, pick_video.js, wait_can_play.js and resolution.js against fake video elements and prints JSON.
 // Usage: node player_scripts_harness.mjs <js dir>
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -41,40 +41,36 @@ out.stateNoBuffer = state();
 window.__vrecVideo = video({ buffered: ranges([[0, 5], [10, 30]]), currentTime: 12 });
 out.stateSecondRange = state();
 
-// pick_video.js: the longest video wins, and the winner is stored in window.__vrecVideo
+// pick_video.js: one attempt per call; the longest video wins and is stored in window.__vrecVideo
 const small = video({ duration: 30, offsetWidth: 10, offsetHeight: 10, tag: 'small' });
 const main = video({ duration: 600, tag: 'main' });
 const live = video({ duration: Infinity, videoWidth: 100, videoHeight: 100, tag: 'live' });
+const pickVideo = load('pick_video.js');
 globalThis.document = { querySelectorAll: sel => (sel === 'video' ? [small, live, main] : []) };
 window.__vrecVideo = undefined;
-out.pickDuration = await load('pick_video.js')();
+out.pick = pickVideo(0);
 out.pickedTag = window.__vrecVideo.tag;
 
 globalThis.document = { querySelectorAll: () => [] };
-try {
-    // no video: the script polls for 30 s, so shorten the clock instead of waiting
-    const realNow = Date.now;
-    let fake = realNow();
-    Date.now = () => (fake += 40000);
-    await load('pick_video.js')();
-    Date.now = realNow;
-    out.pickNone = 'no error';
-} catch (e) {
-    out.pickNone = e.message;
-}
+out.pickNone = pickVideo(40);
 
-const stuck = video({ readyState: 0, tag: 'stuck' });
+// a video that doesn't load: kicked (muted play) once, and only after 3 s
+let plays = 0;
+const stuck = video({ readyState: 0, tag: 'stuck', play() { plays++; return Promise.resolve(); } });
 globalThis.document = { querySelectorAll: () => [stuck] };
-try {
-    const realNow = Date.now;
-    let fake = realNow();
-    Date.now = () => (fake += 40000);
-    await load('pick_video.js')();
-    Date.now = realNow;
-    out.pickStuck = 'no error';
-} catch (e) {
-    out.pickStuck = e.message;
-}
+window.__vrecVideo = undefined;
+out.pickStuck = [pickVideo(0), pickVideo(2.5)];
+out.playsBefore = plays;
+out.pickStuckLate = [pickVideo(3.5), pickVideo(4), pickVideo(30)];
+out.playsAfter = plays;
+out.stuckMuted = stuck.muted;
+out.stuckNotStored = window.__vrecVideo === undefined;
+
+// wait_can_play.js
+window.__vrecVideo = video({ readyState: 3 });
+out.canPlayNot = load('wait_can_play.js')();
+window.__vrecVideo = video({ readyState: 4 });
+out.canPlay = load('wait_can_play.js')();
 
 // resolution.js
 const resolution = load('resolution.js');

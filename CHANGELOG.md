@@ -46,6 +46,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The keyboard controls now work while a video is being prepared, not only during playback. S
+  skips and R restarts it right away (before OBS records anything), Q and H are answered, and P says
+  there is nothing to pause yet. A page without a video no longer blocks the keys for 30 s. The status
+  bar shows `Preparing (loading the page)` and `Preparing (waiting for the video)`.
 - A Chrome tab closed or replaced while vrec waited for Enter (or between two videos) no longer ends the
   run with "Target page, context or browser has been closed": vrec switches to another tab.
 
