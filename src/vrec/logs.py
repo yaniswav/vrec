@@ -41,8 +41,18 @@ class _Tee:
         self._on_line = on_line
         self._pending = ""
 
+    @property
+    def raw(self) -> TextIO:
+        """The real stream: for output that must never reach the log (the status bar's escape codes)."""
+        return self._stream
+
     def write(self, s: str) -> int:
         n = self._stream.write(s)
+        self.feed_log(s)
+        return n
+
+    def feed_log(self, s: str) -> None:
+        """Hand text to the log only, with the same line rules as `write`."""
         for token in _SPLIT_RE.split(s):
             if not token:
                 continue
@@ -53,7 +63,6 @@ class _Tee:
                 self._pending = ""
             else:
                 self._pending += token
-        return n
 
     def note(self, text: str) -> None:
         """Append text to the log only (not the console) and close the current line."""
@@ -65,6 +74,13 @@ class _Tee:
 
     def __getattr__(self, name: str) -> object:
         return getattr(self._stream, name)
+
+
+def log_only(text: str) -> None:
+    """Write text to the run log without showing it on the console (no-op when not logging)."""
+    feed = getattr(sys.stdout, "feed_log", None)
+    if feed is not None:
+        feed(text)
 
 
 class RunLog:

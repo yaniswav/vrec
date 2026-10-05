@@ -32,6 +32,7 @@ from vrec.naming import (
     rename_recording,
 )
 from vrec.obs_control import AudioMeter, frame_signature, is_black_frame
+from vrec.statusbar import StatusBar
 
 __all__ = [
     "INCOMPLETE_REASONS",
@@ -179,6 +180,7 @@ def record_one(
     max_height: int = 0,
     window_capture: str | None = None,
     controls: Controls | None = None,
+    bar: StatusBar | None = None,
 ) -> RecordingResult:
     result = RecordingResult(number=number)
     print(f"[{number}/{total}] {title or url}")
@@ -273,12 +275,17 @@ def record_one(
         wall_clock_cap=features.enabled("wall_clock_cap"),
     )
     visible = _desktop_probe(page) if features.enabled("desktop_pause") else None
-    line = ProgressLine()
+    line = ProgressLine(bar)
     outcome = watch(
         _PagePlayer(page),
         _ObsCapture(client, scene, settings, meter, follow),
         config,
-        Output(warn=warn, progress=line.show, end_progress=line.end),
+        Output(
+            warn=warn,
+            progress=line.show,
+            end_progress=line.end,
+            status=bar.set_state if bar else (lambda *args, **kwargs: None),
+        ),
         visible=visible,
         keys=(lambda: controls.poll(line.end)) if controls else None,
     )

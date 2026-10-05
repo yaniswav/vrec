@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A fixed 2-line status bar at the bottom of the terminal during a batch (feature `status_bar`): the
+  current video's state (playing, paused, buffering, away from the virtual desktop, stopping after this
+  video), progress, image size, batch totals, the estimated end time of the whole batch, and the
+  keyboard shortcuts. Output scrolls above it. It is off in a scheduled run and when the output isn't a
+  terminal, and the log file never contains it.
+
 - Keyboard controls during a batch (feature `hotkeys`): `P` pauses and resumes the video and the OBS
   recording together, `S` skips the video (file named `SKIPPED - <title>`, history unchanged, not a
   failure), `R` restarts it from the beginning (the partial file is deleted), `Q` stops the batch after

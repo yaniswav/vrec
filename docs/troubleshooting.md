@@ -476,6 +476,13 @@ They only work when vrec runs in a terminal you can type in, not in a scheduled 
 `VREC_SCHEDULED`; re-run `vrec --schedule on ...` to refresh an older launcher) and not with
 `vrec --disable hotkeys`. Keys typed before the batch starts are dropped.
 
+### Strange characters like `[1;40r` in the terminal
+
+The status bar at the bottom of the window uses terminal escape codes. If your terminal doesn't support
+them, you see stray text such as `[1;40r` and the lines jump around. Turn the bar off with
+`vrec --disable status_bar`: vrec then shows its usual progress line. Windows Terminal and the Windows 10
+or later console both support it.
+
 ## Batches
 
 ### "Lost connection to Chrome/OBS. Batch stopped; the remaining videos are untouched."

@@ -32,6 +32,7 @@ from vrec import (
     obs_scene,
     power,
     preflight,
+    statusbar,
     vdesktop,
 )
 from vrec.browser import (
@@ -96,6 +97,7 @@ class Batch:
     capture_mode: str = "screen"  # what `capture` is: "screen" or "window"
     interactive: bool = False
     controls: hotkeys.Controls | None = None  # keyboard controls, None when not usable
+    bar: statusbar.StatusBar | None = None  # the fixed status bar, None when not usable
     kept_awake: bool = False  # this run asked Windows not to sleep
     chrome_hwnd: int | None = None  # the recording Chrome window, once found
     pinned_hwnd: int | None = None  # the window vrec pinned to all virtual desktops (to unpin it)
@@ -182,13 +184,19 @@ def _run_locked(
             if client.get_record_status().output_active:
                 raise VrecError("An OBS recording started meanwhile. Stop it, then restart.")
             batch.controls = hotkeys.make_controls(features.enabled("hotkeys"))
+            batch.bar = statusbar.make_bar(
+                features.enabled("status_bar"),
+                batch.controls is not None,
+                lambda: bool(batch.controls and batch.controls.quit_requested),
+            )
 
             try:
                 _ensure_page(batch)
                 _prepare_window(batch)
                 _pin_window(batch)
                 _preflight(batch)
-                _record_batch(batch, selection)
+                with batch.bar.running(len(selection)) if batch.bar else contextlib.nullcontext():
+                    _record_batch(batch, selection)
             finally:
                 _unpin_window(batch)
                 _restore_window(batch)
@@ -619,8 +627,8 @@ def _record_batch(
     # Set by `run()` before the batch loop starts.
     assert batch.page is not None
     error_streak = 0
-    if batch.controls:
-        print(hotkeys.KEYS_LINE)
+    if batch.controls and not (batch.bar and batch.bar.active):
+        print(hotkeys.KEYS_LINE)  # the status bar shows the keys itself
     for i, (url, title) in enumerate(selection, 1):
         if batch.controls:
             batch.controls.drain()  # Q and H pressed between two videos
@@ -633,9 +641,13 @@ def _record_batch(
         if not _enough_disk_space(batch, free_bytes):
             batch.stopped_early = True
             break
+        if batch.bar:
+            batch.bar.begin_video(i, len(selection), _batch_counts(batch))
         batch.current_url = url
         result, had_error = _record_one_with_retry(batch, i, len(selection), url, title, record)
         batch.results.append(result)
+        if batch.bar:
+            batch.bar.update_counts(_batch_counts(batch))
         skipped = result.reason == StopReason.SKIPPED.value
         if not batch.test_mode and not skipped:  # a skipped video keeps its history entry as it was
             _record_in_history(batch, url, result)
@@ -659,6 +671,22 @@ def _record_batch(
 
         if not batch.page.is_closed():
             batch.page.wait_for_timeout(3000)
+
+
+def _batch_counts(batch: Batch) -> statusbar.BatchCounts:
+    """Outcomes and known durations so far, for the status bar."""
+    counts = statusbar.BatchCounts()
+    for result in batch.results:
+        text = status_text(result)
+        if text == "SKIPPED":
+            counts.skipped += 1
+        elif text.startswith(("FAILED", "ERROR")):
+            counts.failed += 1
+        else:
+            counts.ok += 1
+        if result.duration_s > 0:
+            counts.durations.append(result.duration_s)
+    return counts
 
 
 def _enough_disk_space(batch: Batch, free_bytes: Callable[[str], int]) -> bool:
@@ -693,6 +721,8 @@ def _record_one_with_retry(
         window["window_capture"] = batch.capture
     if batch.controls:
         window["controls"] = batch.controls  # type: ignore[assignment]
+    if batch.bar:
+        window["bar"] = batch.bar  # type: ignore[assignment]
 
     def record_again(max_height: int) -> RecordingResult:
         # R restarts the video from the beginning as many times as it is pressed.
