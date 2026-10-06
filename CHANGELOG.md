@@ -51,6 +51,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and recorded once, and vrec prints how many duplicates it ignored. Links without a clear video number
   are compared as before.
 
+- `[library] folders`: folders where you keep finished recordings. At startup vrec scans them (and the OBS
+  folder, subfolders included) once, and videos of your list with no history that match a file name
+  (ignoring accents, case, punctuation and suffixes such as `_360` or `_3D_180_SBS`) are listed with the
+  file path; `Mark them as done? [Y/n]` records them as done. A scheduled or non-interactive run only prints
+  the list. FAILED, INCOMPLETE, INTERRUPTED, SKIPPED and TEST files are never matched. A done video whose
+  file moved keeps its status, and its path is updated when the file is found in these folders.
+
 ### Fixed
 
 - The keyboard controls now work while a video is being prepared, not only during playback. S

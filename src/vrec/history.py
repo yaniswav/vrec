@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, TypedDict, cast
 from urllib.parse import urlsplit
 
+from vrec.library import Library, Match
 from vrec.naming import find_existing_recording
 from vrec.playlist import legacy_url_key, url_key, video_ref
 
@@ -249,3 +250,49 @@ def adopt_existing_files(
                 found += 1
     if found:
         print(f"{found} already-recorded video(s) found in your OBS folder.")
+
+
+def unknown_videos(videos_list: list[tuple[str, str | None]], videos: Videos) -> list[tuple[str, str]]:
+    """The videos with no history entry (under any link) that have a title: (url, title)."""
+    return [(url, title) for url, title in videos_list if title and resolve_key(videos, url) is None]
+
+
+def find_on_disk(
+    videos_list: list[tuple[str, str | None]], videos: Videos, library: Library
+) -> list[tuple[str, str, Match]]:
+    """Videos not in the history that look already downloaded: (url, title, matching file)."""
+    found = []
+    for url, title in unknown_videos(videos_list, videos):
+        match = library.find(title)
+        if match:
+            found.append((url, title, match))
+    return found
+
+
+def moved_files(videos: Videos) -> list[str]:
+    """Keys of the finished entries whose recorded file is no longer where it was."""
+    return [
+        key
+        for key, entry in videos.items()
+        if entry.get("status") in (STATUS_DONE, STATUS_MARKED)
+        and entry.get("file")
+        and not Path(entry["file"]).exists()
+    ]
+
+
+def relink_moved_files(videos: Videos, library: Library, path: Path) -> int:
+    """Finished entries whose file moved: point them at the file found in the library (same name).
+
+    Only the `file` field changes, never the status. Returns how many entries were updated.
+    """
+    changed = 0
+    for key in moved_files(videos):
+        entry = videos[key]
+        title = entry.get("title")
+        match = library.find(title if isinstance(title, str) else None)
+        if match and match.exact:
+            entry["file"] = str(match.path)
+            changed += 1
+    if changed:
+        save(path, videos)
+    return changed

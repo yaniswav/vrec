@@ -49,6 +49,7 @@ from vrec.config import Paths, Settings, load_settings
 from vrec.console import first_line, human_duration, warn
 from vrec.errors import VrecError
 from vrec.features import FeatureSet, load_features
+from vrec.library import scan
 from vrec.lock import InstanceLock
 from vrec.naming import INTERRUPTED_PREFIX, clean_title, rename_recording
 from vrec.playlist import parse_playlist
@@ -252,7 +253,26 @@ def _connect_obs(
     except Exception:
         record_dir = None
     history.adopt_existing_files(videos, videos_history, record_dir, paths.history)
+    _look_in_library(videos, videos_history, paths, settings, record_dir)
     return client, password
+
+
+def _look_in_library(
+    videos: list[Video],
+    videos_history: history.Videos,
+    paths: Paths,
+    settings: Settings,
+    record_dir: str | None,
+) -> None:
+    """Scan the OBS folder and `[library] folders` once, to find videos you already have (they are
+    offered as done, once, before the menu) and recordings you moved (their file path is updated)."""
+    new = history.unknown_videos(videos, videos_history)
+    if not new and not history.moved_files(videos_history):
+        return  # nothing to look for: skip the scan
+    library = scan([record_dir, *settings.library_folders])
+    history.relink_moved_files(videos_history, library, paths.history)
+    found = history.find_on_disk(videos, videos_history, library)
+    menu.offer_found_files(found, videos_history, paths.history, hotkeys.available(True))
 
 
 def _choose_selection(

@@ -441,6 +441,29 @@ is optional; a missing file or key falls back to the default shown below.
 | `[display]` | `screen` | `auto` | Screen the recording Chrome window is moved to (feature `auto_place_window`). `auto` = the largest screen that isn't your main one, or your main screen if it is the only one; or a number (`2`) or a name (`DISPLAY3`). See [docs/virtual-display.md](docs/virtual-display.md). |
 | `[display]` | `off_while_running` | `[]` | Process names (case-insensitive, e.g. `["VALORANT-Win64-Shipping.exe"]`) that don't like a virtual display. `vrec --display auto` turns the virtual display off while one runs and back on after; a batch warns if one is running. See [Virtual display on/off](#virtual-display-onoff). |
 | `[audio]` | `output` | `CABLE Input` | Audio output that receives the recorded video's sound (feature `audio_sink`). Any part of the device name works. |
+| `[library]` | `folders` | `[]` | Folders where you keep finished recordings, scanned recursively (for example `["C:\\Users\\you\\Videos\\VR"]`). See [Videos you already have](#videos-you-already-have). |
+
+### Videos you already have
+
+At startup vrec reads the OBS recording folder and every `[library] folders` entry once (video files
+only: mp4, mkv, mov, webm, avi, m4v, ts, flv). A video of your list that has no history yet but whose
+title matches a file name is listed, and vrec asks `Mark them as done? [Y/n]`:
+
+```text
+2 video(s) look already downloaded:
+  Some Title
+     -> C:\Users\you\Videos\VR\Ready\Some Title_3D_360_TB.mp4
+```
+
+Matching ignores accents, case, punctuation, curly quotes and the suffixes converters add (`_360`,
+`_180`, `_3D_360_TB`, `_3D_180_SBS`, `_SBS`, `_TB`, `_LR`, ` (2)`). A close but not identical name also
+counts, as long as it is very similar. Files named TEST, INCOMPLETE, INTERRUPTED, SKIPPED or FAILED are
+never matched. In a scheduled or non-interactive run vrec only prints the list: nothing is marked and
+those videos are recorded. A file with exactly the title in the OBS folder itself is still marked done
+without asking.
+
+A done video whose file you moved is never downgraded. If the file is found again in these folders under
+the same name, its path in `history.json` is updated.
 
 Environment variables:
 
@@ -541,7 +564,7 @@ src/vrec/            application source
   features.py           feature toggle registry and data/features.toml
   logs.py               per-run log files (data/logs)
   lock.py               single-instance lock
-  history.py, naming.py, playlist.py, config.py, console.py, menu.py  supporting modules
+  history.py, library.py, naming.py, playlist.py, config.py, console.py, menu.py  supporting modules
   js/                    JS snippets injected into the recorded page
 scripts/windows/    install.bat, setup.bat, start.bat, test.bat, launch_chrome.bat, features.bat,
                     display_on/off/status/auto.bat

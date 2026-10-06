@@ -106,3 +106,12 @@ off_while_running = []
 # Audio output that receives the recorded video's sound (feature audio_sink).
 # Any part of the device name works; VB-CABLE's playback side is called "CABLE Input".
 output = "CABLE Input"
+
+[library]
+# Folders where you keep finished recordings (scanned recursively, video files only). At startup, a
+# video of your list that has no history yet but whose title matches a file here or in the OBS folder is
+# offered as already downloaded, and a done video whose file moved gets its new path. Matching ignores
+# accents, case, punctuation and suffixes like _360 or _3D_180_SBS. The OBS recording folder is always
+# included, you don't need to list it.
+# Example: folders = ["C:\\Users\\you\\Videos\\VR"]
+folders = []
