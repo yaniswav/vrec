@@ -10,7 +10,7 @@ import json
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast
 from urllib.parse import urlsplit
 
 from vrec.library import Library, Match
@@ -61,6 +61,7 @@ class VideoRecord(TypedDict):
     file: str
     quality: str
     date: str
+    duration: NotRequired[int]  # the video's length in seconds, when known (older entries have none)
 
 
 Videos = dict[str, VideoRecord]
@@ -202,9 +203,10 @@ def record(
     detail: str = "",
     file: Path | str | None = None,
     quality: str = "",
+    duration: float = 0,
 ) -> None:
     """Update one video's entry in-place and save immediately."""
-    videos[resolve_key(videos, url) or url_key(url)] = {
+    entry: VideoRecord = {
         "url": url,
         "title": title,
         "status": status,
@@ -213,6 +215,9 @@ def record(
         "quality": quality,
         "date": time.strftime("%Y-%m-%d %H:%M"),
     }
+    if duration > 0:
+        entry["duration"] = round(duration)
+    videos[resolve_key(videos, url) or url_key(url)] = entry
     save(path, videos)
 
 

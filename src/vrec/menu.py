@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from vrec import history
+from vrec import history, mediainfo
+from vrec.console import human_duration
 from vrec.features import LEGEND, FeatureSet, render_lines, save_features
 from vrec.library import Match
 
@@ -43,7 +44,8 @@ def offer_found_files(
         return 0
     print(f"{len(found)} video(s) look already downloaded:")
     for _, title, match in found:
-        print(f"  {title}\n     -> {match.path}")
+        length = mediainfo.file_duration_s(match.path)  # one read per file shown
+        print(f"  {title}\n     -> {match.path}" + (f"  ({human_duration(length)})" if length else ""))
     if not interactive:
         print("Not marked as done (no one to ask): they will be recorded.")
         return 0

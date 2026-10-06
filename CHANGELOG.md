@@ -58,6 +58,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the list. FAILED, INCOMPLETE, INTERRUPTED, SKIPPED and TEST files are never matched. A done video whose
   file moved keeps its status, and its path is updated when the file is found in these folders.
 
+- Duration check: the history now keeps each video's length (`duration`, in seconds; older entries without it
+  stay valid). When a recording ends OK but its file, read from Windows without ffmpeg, is less than 95% of
+  the video and more than 30 s short, it is marked REVIEW with `file shorter than the video (12:03 of
+  19:53)`. A longer file is normal (lead-in and tail), and an unreadable length never changes the status.
+  The list of videos found on disk also shows each file's length.
+
 ### Fixed
 
 - The keyboard controls now work while a video is being prepared, not only during playback. S

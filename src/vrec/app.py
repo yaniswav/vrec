@@ -27,6 +27,7 @@ from vrec import (
     history,
     hotkeys,
     launcher,
+    mediainfo,
     menu,
     notify,
     obs_control,
@@ -679,6 +680,7 @@ def _record_batch(
             batch.bar.begin_video(i, len(selection), _batch_counts(batch))
         batch.current_url = url
         result, had_error = _record_one_with_retry(batch, i, len(selection), url, title, record)
+        _check_file_duration(batch, result)
         batch.results.append(result)
         if batch.bar:
             batch.bar.update_counts(_batch_counts(batch))
@@ -815,6 +817,21 @@ def _save_history(batch: Batch, url: str, title: str, status: str, detail: str, 
         )
 
 
+def _check_file_duration(batch: Batch, result: RecordingResult) -> None:
+    """A recording that ended OK but whose file is clearly shorter than the video needs a look.
+
+    The recording holds a lead-in and a tail, so a longer file is normal; an unknown length is no problem.
+    """
+    if batch.test_mode or not result.file or result.duration_s <= 0 or status_text(result) != "OK":
+        return
+    file_s = mediainfo.file_duration_s(result.file)
+    if mediainfo.is_cut_short(file_s, result.duration_s):
+        result.file_problem = (
+            f"file shorter than the video ({human_duration(file_s)} of {human_duration(result.duration_s)})"
+        )
+        print(f"   {result.file_problem}")
+
+
 def _record_in_history(batch: Batch, url: str, result: RecordingResult) -> None:
     status, detail = history_status(result)
     _save_history(
@@ -825,6 +842,7 @@ def _record_in_history(batch: Batch, url: str, result: RecordingResult) -> None:
         detail,
         file=result.file,
         quality=result.quality,
+        duration=result.duration_s,
     )
 
 

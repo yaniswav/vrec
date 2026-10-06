@@ -16,6 +16,7 @@ Unattended OBS recording of web videos, one after another.
   - pauses the recording while the video buffers, so the file never contains a frozen frame,
   - starts the OBS recording, then plays the video,
   - detects the end of the video and stops the recording,
+  - checks that the file isn't clearly shorter than the video (otherwise it is marked REVIEW),
   - renames the file after the video's title,
   - logs the result in a history file.
 - Recognizes a video you already recorded even if its link changed a little (another title in the link,
@@ -452,8 +453,10 @@ title matches a file name is listed, and vrec asks `Mark them as done? [Y/n]`:
 ```text
 2 video(s) look already downloaded:
   Some Title
-     -> C:\Users\you\Videos\VR\Ready\Some Title_3D_360_TB.mp4
+     -> C:\Users\you\Videos\VR\Ready\Some Title_3D_360_TB.mp4  (19:51)
 ```
+
+The length of each file, when Windows can read it, is shown in brackets so you can compare it with the video.
 
 Matching ignores accents, case, punctuation, curly quotes and the suffixes converters add (`_360`,
 `_180`, `_3D_360_TB`, `_3D_180_SBS`, `_SBS`, `_TB`, `_LR`, ` (2)`). A close but not identical name also
@@ -564,7 +567,7 @@ src/vrec/            application source
   features.py           feature toggle registry and data/features.toml
   logs.py               per-run log files (data/logs)
   lock.py               single-instance lock
-  history.py, library.py, naming.py, playlist.py, config.py, console.py, menu.py  supporting modules
+  history.py, library.py, mediainfo.py, naming.py, playlist.py, config.py, console.py, menu.py  supporting modules
   js/                    JS snippets injected into the recorded page
 scripts/windows/    install.bat, setup.bat, start.bat, test.bat, launch_chrome.bat, features.bat,
                     display_on/off/status/auto.bat

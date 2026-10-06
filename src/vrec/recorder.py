@@ -88,6 +88,7 @@ class RecordingResult:
     buffering_pauses: int = 0
     desktop_pauses: int = 0
     duration_s: float = 0.0  # length of the video (0 = unknown)
+    file_problem: str = ""  # what is wrong with the recorded file itself, once checked ("" = nothing)
 
 
 class _Interrupted(Exception):
@@ -470,6 +471,8 @@ def status_text(result: RecordingResult) -> str:
         problems.append("no audio")
     if result.reason not in (StopReason.ENDED.value, StopReason.TEST_DONE.value):
         problems.append(result.reason)
+    if result.file_problem:
+        problems.append(result.file_problem)
     return "CHECK: " + ", ".join(problems) if problems else "OK"
 
 
