@@ -27,6 +27,7 @@ from vrec import (
     history,
     hotkeys,
     launcher,
+    mediainfo,
     menu,
     notify,
     obs_control,
@@ -49,9 +50,10 @@ from vrec.config import Paths, Settings, load_settings
 from vrec.console import first_line, human_duration, warn
 from vrec.errors import VrecError
 from vrec.features import FeatureSet, load_features
+from vrec.library import scan
 from vrec.lock import InstanceLock
 from vrec.naming import INTERRUPTED_PREFIX, clean_title, rename_recording
-from vrec.playlist import read_playlist
+from vrec.playlist import parse_playlist
 from vrec.recorder import (
     RecordingResult,
     StopReason,
@@ -222,7 +224,9 @@ def _load_inputs(paths: Paths) -> tuple[list[Video], history.Videos]:
         raise VrecError(
             f"File not found: {paths.videos}\nCopy videos.example.txt to {paths.videos} and add your links."
         )
-    videos = read_playlist(paths.videos)
+    videos, duplicates = parse_playlist(paths.videos)
+    if duplicates:
+        print(f"{duplicates} duplicate(s) in {paths.videos.name} ignored (same video listed twice).")
     if not videos:
         raise VrecError(f"{paths.videos.name} contains no links.")
     videos_history = history.load(paths.history)
@@ -250,7 +254,26 @@ def _connect_obs(
     except Exception:
         record_dir = None
     history.adopt_existing_files(videos, videos_history, record_dir, paths.history)
+    _look_in_library(videos, videos_history, paths, settings, record_dir)
     return client, password
+
+
+def _look_in_library(
+    videos: list[Video],
+    videos_history: history.Videos,
+    paths: Paths,
+    settings: Settings,
+    record_dir: str | None,
+) -> None:
+    """Scan the OBS folder and `[library] folders` once, to find videos you already have (they are
+    offered as done, once, before the menu) and recordings you moved (their file path is updated)."""
+    new = history.unknown_videos(videos, videos_history)
+    if not new and not history.moved_files(videos_history):
+        return  # nothing to look for: skip the scan
+    library = scan([record_dir, *settings.library_folders])
+    history.relink_moved_files(videos_history, library, paths.history)
+    found = history.find_on_disk(videos, videos_history, library)
+    menu.offer_found_files(found, videos_history, paths.history, hotkeys.available(True))
 
 
 def _choose_selection(
@@ -657,6 +680,7 @@ def _record_batch(
             batch.bar.begin_video(i, len(selection), _batch_counts(batch))
         batch.current_url = url
         result, had_error = _record_one_with_retry(batch, i, len(selection), url, title, record)
+        _check_file_duration(batch, result)
         batch.results.append(result)
         if batch.bar:
             batch.bar.update_counts(_batch_counts(batch))
@@ -793,6 +817,21 @@ def _save_history(batch: Batch, url: str, title: str, status: str, detail: str, 
         )
 
 
+def _check_file_duration(batch: Batch, result: RecordingResult) -> None:
+    """A recording that ended OK but whose file is clearly shorter than the video needs a look.
+
+    The recording holds a lead-in and a tail, so a longer file is normal; an unknown length is no problem.
+    """
+    if batch.test_mode or not result.file or result.duration_s <= 0 or status_text(result) != "OK":
+        return
+    file_s = mediainfo.file_duration_s(result.file)
+    if mediainfo.is_cut_short(file_s, result.duration_s):
+        result.file_problem = (
+            f"file shorter than the video ({human_duration(file_s)} of {human_duration(result.duration_s)})"
+        )
+        print(f"   {result.file_problem}")
+
+
 def _record_in_history(batch: Batch, url: str, result: RecordingResult) -> None:
     status, detail = history_status(result)
     _save_history(
@@ -803,6 +842,7 @@ def _record_in_history(batch: Batch, url: str, result: RecordingResult) -> None:
         detail,
         file=result.file,
         quality=result.quality,
+        duration=result.duration_s,
     )
 
 

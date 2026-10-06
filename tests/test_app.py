@@ -431,3 +431,14 @@ def test_summary_line_totals(tmp_path: Path) -> None:
 
 def test_summary_line_minimal() -> None:
     assert app.summary_line([], 0) == "0/0 OK"
+
+
+def test_load_inputs_reports_duplicates(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    paths = Paths(data_dir=tmp_path, config=tmp_path / "config.toml")
+    paths.videos.write_text(
+        "https://videos.example.test/clip/12345/a\nhttps://videos.example.test/clip/12345/b\n",
+        encoding="utf-8",
+    )
+    videos, _ = app._load_inputs(paths)
+    assert len(videos) == 1
+    assert "1 duplicate(s) in videos.txt ignored (same video listed twice)." in capsys.readouterr().out

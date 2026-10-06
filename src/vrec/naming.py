@@ -26,10 +26,10 @@ INTERRUPTED_PREFIX = "INTERRUPTED"  # recordings cut short by Ctrl+C or an error
 SKIPPED_PREFIX = "SKIPPED"  # recordings of a video skipped with the S key
 
 # Legacy (French) failure marker used by recordings made before this rewrite.
-_LEGACY_FAILED_MARKER = "ECHEC"
+ECHEC_MARKER = "ECHEC"
 
 # Stems starting with any of these are never a genuine completed recording.
-_EXCLUDED_PREFIXES = (TEST_PREFIX, INCOMPLETE_PREFIX, INTERRUPTED_PREFIX, SKIPPED_PREFIX)
+EXCLUDED_PREFIXES = (TEST_PREFIX, INCOMPLETE_PREFIX, INTERRUPTED_PREFIX, SKIPPED_PREFIX)
 
 
 def clean_title(text: str | None) -> str:
@@ -55,9 +55,9 @@ def find_existing_recording(folder: str | Path | None, title: str | None) -> Pat
             if (
                 f.is_file()
                 and (f.stem == title or f.stem.endswith(" - " + title))
-                and not f.stem.startswith(_EXCLUDED_PREFIXES)
+                and not f.stem.startswith(EXCLUDED_PREFIXES)
                 and "FAILED" not in f.stem
-                and _LEGACY_FAILED_MARKER not in f.stem
+                and ECHEC_MARKER not in f.stem
             ):
                 return f
     except OSError:

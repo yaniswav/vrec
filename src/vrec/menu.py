@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from vrec import history
+from vrec import history, mediainfo
+from vrec.console import human_duration
 from vrec.features import LEGEND, FeatureSet, render_lines, save_features
-from vrec.playlist import url_key
+from vrec.library import Match
 
 
 def ask(question: str) -> str:
@@ -15,6 +16,47 @@ def ask(question: str) -> str:
         return input(question).strip()
     except EOFError:
         return "q"
+
+
+def confirm(question: str, default: bool = True) -> bool:
+    """Ask a yes/no question, the default shown in brackets and taken on Enter. No input counts as no."""
+    hint = "Y/n" if default else "y/N"
+    while True:
+        answer = ask(f"{question} [{hint}]: ").lower()
+        if not answer:
+            return default
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no", "q"):
+            return False
+        print("   Please answer y or n (Enter keeps the value in brackets).")
+
+
+def offer_found_files(
+    found: list[tuple[str, str, Match]],
+    videos_history: history.Videos,
+    history_path: Path,
+    interactive: bool,
+) -> int:
+    """List the videos that look already downloaded and, if someone is there to answer, offer to mark
+    them as done. Returns how many were marked. A non-interactive run marks nothing."""
+    if not found:
+        return 0
+    print(f"{len(found)} video(s) look already downloaded:")
+    for _, title, match in found:
+        length = mediainfo.file_duration_s(match.path)  # one read per file shown
+        print(f"  {title}\n     -> {match.path}" + (f"  ({human_duration(length)})" if length else ""))
+    if not interactive:
+        print("Not marked as done (no one to ask): they will be recorded.")
+        return 0
+    if not confirm("Mark them as done?"):
+        print("Not marked: they stay in the list as NEW.")
+        return 0
+    for url, title, match in found:
+        history.record(
+            history_path, videos_history, url, title, history.STATUS_DONE, "found on disk", match.path
+        )
+    return len(found)
 
 
 def parse_numbers(text: str, maximum: int) -> list[int]:
@@ -53,9 +95,7 @@ def choose_numbers(question: str, maximum: int) -> list[int]:
 def show_list(videos: list[tuple[str, str | None]], videos_history: history.Videos) -> None:
     print("\n===== YOUR VIDEOS (videos.txt) =====")
     for i, (url, title) in enumerate(videos, 1):
-        known = videos_history.get(url_key(url))
-        if not isinstance(known, dict):
-            known = None
+        known = history.entry_of(videos_history, url)
         tag = history.label(history.status_of(videos_history, url))
         info = []
         date = known.get("date") if known else None

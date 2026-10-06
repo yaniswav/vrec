@@ -44,6 +44,7 @@ class Settings:
     max_wall_factor: float = 3
     max_wall_extra_s: float = 600
     min_free_gb: float = 5
+    library_folders: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -133,6 +134,9 @@ _SCHEMA: dict[str, dict[str, tuple[str, type]]] = {
     },
     "audio": {
         "output": ("audio_output", str),
+    },
+    "library": {
+        "folders": ("library_folders", list),
     },
 }
 

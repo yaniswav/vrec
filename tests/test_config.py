@@ -138,3 +138,17 @@ def test_off_while_running_must_be_a_list_of_text(tmp_path: Path, value: str) ->
     path.write_text(f"[display]\noff_while_running = {value}\n", encoding="utf-8")
     with pytest.raises(VrecError, match="off_while_running"):
         load_settings(path)
+
+
+def test_library_folders(tmp_path: Path) -> None:
+    assert Settings().library_folders == ()
+    path = tmp_path / "config.toml"
+    path.write_text('[library]\nfolders = ["D:\\\\VR", " ", "E:\\\\Clips "]\n', encoding="utf-8")
+    assert load_settings(path).library_folders == ("D:\\VR", "E:\\Clips")
+
+
+def test_library_folders_must_be_a_list_of_text(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[library]\nfolders = "D:\\\\VR"\n', encoding="utf-8")
+    with pytest.raises(VrecError, match=r"\[library\] folders"):
+        load_settings(path)

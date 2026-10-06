@@ -44,6 +44,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `[obs] capture_cursor` (default `false`): whether vrec's own OBS capture films the mouse cursor. Capture
   sources you made yourself are never changed.
 
+- The same clip under another link is now recognized: vrec compares the site and the video number (a long
+  number in the link, or `v=`, `id=`, `video_id=`), so a changed title slug, `www.`, `http` or tracking
+  parameters no longer make a recorded video look new. The history, the menu, "mark as done" and "reset"
+  all find the existing entry. A clip listed twice in `videos.txt`, even with two different links, is shown
+  and recorded once, and vrec prints how many duplicates it ignored. Links without a clear video number
+  are compared as before.
+
+- `[library] folders`: folders where you keep finished recordings. At startup vrec scans them (and the OBS
+  folder, subfolders included) once, and videos of your list with no history that match a file name
+  (ignoring accents, case, punctuation and suffixes such as `_360` or `_3D_180_SBS`) are listed with the
+  file path; `Mark them as done? [Y/n]` records them as done. A scheduled or non-interactive run only prints
+  the list. FAILED, INCOMPLETE, INTERRUPTED, SKIPPED and TEST files are never matched. A done video whose
+  file moved keeps its status, and its path is updated when the file is found in these folders.
+
+- Duration check: the history now keeps each video's length (`duration`, in seconds; older entries without it
+  stay valid). When a recording ends OK but its file, read from Windows without ffmpeg, is less than 95% of
+  the video and more than 30 s short, it is marked REVIEW with `file shorter than the video (12:03 of
+  19:53)`. A longer file is normal (lead-in and tail), and an unreadable length never changes the status.
+  The list of videos found on disk also shows each file's length.
+
 ### Fixed
 
 - The keyboard controls now work while a video is being prepared, not only during playback. S

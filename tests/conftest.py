@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from vrec import vdesktop
+from vrec import mediainfo, vdesktop
 
 
 @pytest.fixture(autouse=True)
@@ -16,3 +16,10 @@ def _no_real_desktops(request: pytest.FixtureRequest, monkeypatch: pytest.Monkey
     monkeypatch.setattr(vdesktop, "unpin", lambda hwnd: False)
     monkeypatch.setattr(vdesktop, "is_pinned", lambda hwnd: None)
     monkeypatch.setattr(vdesktop, "on_current_desktop", lambda hwnd: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_media_properties(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    if request.module.__name__.endswith("test_mediainfo"):
+        return  # tests the wrapper around a faked Windows call
+    monkeypatch.setattr(mediainfo, "_read_duration_ticks", lambda path: None)
