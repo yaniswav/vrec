@@ -44,6 +44,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `[obs] capture_cursor` (default `false`): whether vrec's own OBS capture films the mouse cursor. Capture
   sources you made yourself are never changed.
 
+- The same clip under another link is now recognized: vrec compares the site and the video number (a long
+  number in the link, or `v=`, `id=`, `video_id=`), so a changed title slug, `www.`, `http` or tracking
+  parameters no longer make a recorded video look new. The history, the menu, "mark as done" and "reset"
+  all find the existing entry. A clip listed twice in `videos.txt`, even with two different links, is shown
+  and recorded once, and vrec prints how many duplicates it ignored. Links without a clear video number
+  are compared as before.
+
 ### Fixed
 
 - The keyboard controls now work while a video is being prepared, not only during playback. S

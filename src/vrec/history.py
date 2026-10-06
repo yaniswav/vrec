@@ -14,7 +14,7 @@ from typing import Any, TypedDict, cast
 from urllib.parse import urlsplit
 
 from vrec.naming import find_existing_recording
-from vrec.playlist import legacy_url_key, url_key
+from vrec.playlist import legacy_url_key, url_key, video_ref
 
 STATUS_DONE = "done"
 STATUS_MARKED = "marked"
@@ -166,6 +166,32 @@ def save(path: Path, videos: Videos, sleep: Callable[[float], None] = time.sleep
             sleep(0.2)
 
 
+def resolve_key(videos: Videos, url: str) -> str | None:
+    """The key of this video's entry, or None if it has none.
+
+    The exact `url_key` comes first. Otherwise an entry recorded under another link of the same clip
+    (same host and same video id, see `video_ref`) counts. Existing keys are never rewritten.
+    """
+    key = url_key(url)
+    if key in videos:
+        return key
+    ref = video_ref(url)
+    if ref is None:
+        return None
+    for other, entry in videos.items():
+        entry_url = entry.get("url") if isinstance(entry, dict) else None
+        if isinstance(entry_url, str) and video_ref(entry_url) == ref:
+            return other
+    return None
+
+
+def entry_of(videos: Videos, url: str) -> VideoRecord | None:
+    """This video's entry (recorded under this link or another link of the same clip), if any."""
+    key = resolve_key(videos, url)
+    known = videos.get(key) if key is not None else None
+    return known if isinstance(known, dict) else None
+
+
 def record(
     path: Path,
     videos: Videos,
@@ -177,7 +203,7 @@ def record(
     quality: str = "",
 ) -> None:
     """Update one video's entry in-place and save immediately."""
-    videos[url_key(url)] = {
+    videos[resolve_key(videos, url) or url_key(url)] = {
         "url": url,
         "title": title,
         "status": status,
@@ -190,8 +216,8 @@ def record(
 
 
 def status_of(videos: Videos, url: str) -> str | None:
-    known = videos.get(url_key(url))
-    if not isinstance(known, dict):
+    known = entry_of(videos, url)
+    if known is None:
         return None
     status = known.get("status")
     return status if isinstance(status, str) else None
@@ -201,8 +227,8 @@ def display_title(videos: Videos, url: str, title: str | None) -> str:
     """Best title to show for a video: the given one, else the last known one, else derived from the URL."""
     if title:
         return title
-    known = videos.get(url_key(url))
-    if isinstance(known, dict) and isinstance(known.get("title"), str) and known["title"]:
+    known = entry_of(videos, url)
+    if known is not None and isinstance(known.get("title"), str) and known["title"]:
         return known["title"]
     return urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").strip() or url
 
@@ -216,7 +242,7 @@ def adopt_existing_files(
     """Videos recorded before the history existed: find them back by their file name."""
     found = 0
     for url, title in videos_list:
-        if url_key(url) not in videos and title:
+        if resolve_key(videos, url) is None and title:
             file = find_existing_recording(folder, title)
             if file:
                 record(path, videos, url, title, STATUS_DONE, "found on disk", file)

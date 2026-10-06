@@ -18,6 +18,9 @@ Unattended OBS recording of web videos, one after another.
   - detects the end of the video and stops the recording,
   - renames the file after the video's title,
   - logs the result in a history file.
+- Recognizes a video you already recorded even if its link changed a little (another title in the link,
+  `www.`, tracking parameters): it compares the site and the video number. A clip listed twice in the
+  list is recorded once.
 - Shows a menu at startup with what is already done, so you can pick what to record next (all of it,
   or just some entries, in whatever order you want).
 - Lets you keep using your PC normally on your main screen while it works: the recording happens on a

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from vrec.playlist import legacy_url_key, read_playlist, url_key
+import pytest
+
+from vrec.playlist import legacy_url_key, parse_playlist, read_playlist, url_key, video_ref
 
 
 def test_bare_links(tmp_path: Path) -> None:
@@ -148,3 +150,75 @@ def test_url_key_stable_for_equivalent_urls() -> None:
 
 def test_legacy_url_key_is_the_old_format() -> None:
     assert legacy_url_key("https://Example.com/A/?v=B#x") == "https://example.com/a"
+
+
+# ---------- video_ref: the same clip under another link ----------
+
+_HOST = "https://videos.example.test"
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        (f"{_HOST}/clip/12345/some-title", f"{_HOST}/clip/12345/new-slug"),
+        ("https://www.videos.example.test/clip/12345/t", f"{_HOST}/clip/12345/t"),
+        ("http://videos.example.test/clip/12345/t", f"{_HOST}/clip/12345/t"),
+        (f"{_HOST}/clip/12345/", f"{_HOST}/clip/12345"),
+        (f"{_HOST}/clip/12345?utm_source=x&ref=y", f"{_HOST}/clip/12345"),
+        (f"{_HOST}/watch?v=Ab3dE_9", f"{_HOST}/watch?v=Ab3dE_9&t=40"),
+        (f"{_HOST}/player?id=987654", "https://www.videos.example.test/player?id=987654"),
+        (f"{_HOST}/p?video_id=abc12345", f"{_HOST}/other?video_id=abc12345"),
+    ],
+)
+def test_video_ref_same_clip(a: str, b: str) -> None:
+    assert video_ref(a) is not None
+    assert video_ref(a) == video_ref(b)
+
+
+def test_video_ref_different_host_same_number_is_another_video() -> None:
+    one = video_ref("https://one.example.test/clip/12345/a")
+    assert one is not None
+    assert one != video_ref("https://two.example.test/clip/12345/a")
+
+
+def test_video_ref_different_ids_differ() -> None:
+    assert video_ref(f"{_HOST}/clip/12345/a") != video_ref(f"{_HOST}/clip/12346/a")
+    assert video_ref(f"{_HOST}/watch?v=Ab3dE_9") != video_ref(f"{_HOST}/watch?v=Ab3dE_8")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"{_HOST}/clip/some-title",
+        f"{_HOST}/clip/1234/title",  # fewer than 5 digits
+        f"{_HOST}/watch?v=abc",  # too short
+        f"{_HOST}/",
+        "not a link",
+    ],
+)
+def test_video_ref_none_without_a_clear_id(url: str) -> None:
+    assert video_ref(url) is None
+
+
+def test_playlist_same_clip_twice_is_listed_once(tmp_path: Path) -> None:
+    path = tmp_path / "videos.txt"
+    path.write_text(
+        f"{_HOST}/clip/12345/old-slug\n"
+        f"Second Title\nhttps://www.videos.example.test/clip/12345/new-slug\n"
+        f"{_HOST}/clip/22222/other\n"
+        f"{_HOST}/clip/22222/other\n",
+        encoding="utf-8",
+    )
+    videos, duplicates = parse_playlist(path)
+    assert videos == [
+        (f"{_HOST}/clip/12345/old-slug", "Second Title"),
+        (f"{_HOST}/clip/22222/other", None),
+    ]
+    assert duplicates == 2
+    assert read_playlist(path) == videos
+
+
+def test_playlist_without_id_only_dedups_by_url_key(tmp_path: Path) -> None:
+    path = tmp_path / "videos.txt"
+    path.write_text(f"{_HOST}/a-title\n{_HOST}/b-title\n", encoding="utf-8")
+    assert parse_playlist(path)[1] == 0

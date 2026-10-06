@@ -51,7 +51,7 @@ from vrec.errors import VrecError
 from vrec.features import FeatureSet, load_features
 from vrec.lock import InstanceLock
 from vrec.naming import INTERRUPTED_PREFIX, clean_title, rename_recording
-from vrec.playlist import read_playlist
+from vrec.playlist import parse_playlist
 from vrec.recorder import (
     RecordingResult,
     StopReason,
@@ -222,7 +222,9 @@ def _load_inputs(paths: Paths) -> tuple[list[Video], history.Videos]:
         raise VrecError(
             f"File not found: {paths.videos}\nCopy videos.example.txt to {paths.videos} and add your links."
         )
-    videos = read_playlist(paths.videos)
+    videos, duplicates = parse_playlist(paths.videos)
+    if duplicates:
+        print(f"{duplicates} duplicate(s) in {paths.videos.name} ignored (same video listed twice).")
     if not videos:
         raise VrecError(f"{paths.videos.name} contains no links.")
     videos_history = history.load(paths.history)

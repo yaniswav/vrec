@@ -7,7 +7,6 @@ from pathlib import Path
 
 from vrec import history
 from vrec.features import LEGEND, FeatureSet, render_lines, save_features
-from vrec.playlist import url_key
 
 
 def ask(question: str) -> str:
@@ -53,9 +52,7 @@ def choose_numbers(question: str, maximum: int) -> list[int]:
 def show_list(videos: list[tuple[str, str | None]], videos_history: history.Videos) -> None:
     print("\n===== YOUR VIDEOS (videos.txt) =====")
     for i, (url, title) in enumerate(videos, 1):
-        known = videos_history.get(url_key(url))
-        if not isinstance(known, dict):
-            known = None
+        known = history.entry_of(videos_history, url)
         tag = history.label(history.status_of(videos_history, url))
         info = []
         date = known.get("date") if known else None

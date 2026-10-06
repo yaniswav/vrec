@@ -222,3 +222,40 @@ def test_load_keeps_existing_new_key_entry(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert history.status_of(history.load(path), url) == history.STATUS_REVIEW
+
+
+# ---------- the same clip recorded under another link ----------
+
+_OLD = "https://videos.example.test/clip/12345/old-slug"
+_NEW = "https://www.videos.example.test/clip/12345/new-slug"
+
+
+def test_lookups_find_an_entry_recorded_under_another_link(tmp_path: Path) -> None:
+    path = tmp_path / "history.json"
+    videos: history.Videos = {}
+    history.record(path, videos, _OLD, "Old Title", history.STATUS_DONE, "", "A.mp4")
+
+    assert history.resolve_key(videos, _NEW) == url_key(_OLD)
+    assert history.status_of(videos, _NEW) == history.STATUS_DONE
+    assert history.display_title(videos, _NEW, None) == "Old Title"
+    assert history.resolve_key(videos, "https://other.example.test/clip/12345/x") is None
+    assert history.status_of(videos, "https://videos.example.test/clip/99999/x") is None
+
+
+def test_record_updates_the_existing_entry_without_rewriting_its_key(tmp_path: Path) -> None:
+    path = tmp_path / "history.json"
+    videos: history.Videos = {}
+    history.record(path, videos, _OLD, "A", history.STATUS_DONE)
+    history.record(path, videos, _NEW, "A", history.STATUS_NEW, "reset")
+    assert list(videos) == [url_key(_OLD)]
+    assert videos[url_key(_OLD)]["status"] == history.STATUS_NEW
+
+
+def test_adopt_skips_a_clip_known_under_another_link(tmp_path: Path) -> None:
+    folder = tmp_path / "rec"
+    folder.mkdir()
+    (folder / "My Video.mp4").touch()
+    videos = {url_key(_OLD): _legacy_entry(_OLD, history.STATUS_FAILED)}
+    history.adopt_existing_files([(_NEW, "My Video")], videos, folder, tmp_path / "history.json")  # type: ignore[arg-type]
+    assert list(videos) == [url_key(_OLD)]
+    assert videos[url_key(_OLD)]["status"] == history.STATUS_FAILED
