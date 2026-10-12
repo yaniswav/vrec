@@ -10,5 +10,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-py -m pip install --upgrade -e .
+py -m pip install --upgrade -e . -c requirements-lock.txt
 pause

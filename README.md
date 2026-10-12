@@ -587,6 +587,25 @@ pytest
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer workflow (pre-commit, coverage, mypy).
 
+## Maintenance
+
+vrec has no server and no account: once it works on your machine, it keeps working until something
+around it changes. `requirements-lock.txt` pins the Python packages known to work together, and
+`install.bat` and CI install exactly those. Dependabot proposes updates once a month in a pull request,
+and CI tests it before it is merged.
+
+What can break, most likely first:
+
+| What changed | What you see | What to do |
+|---|---|---|
+| The site changed its page | `No video found on the page`, quality not forced | Adapt the scripts in `src/vrec/js/` (finding the video, the quality menu) |
+| A Windows update | `Virtual desktops` check fails | Update `pyvda` (it uses an undocumented Windows API). Recording still works, only switching desktops is affected |
+| A Chrome update | vrec can't connect to Chrome | Update `playwright` |
+| An OBS update | OBS WebSocket errors | Update `obsws-python` (rare: the API is stable) |
+
+When something fails, run `vrec --doctor` first, then read the last file in `data\logs\`: it holds
+everything vrec printed, with timestamps.
+
 ## Responsible use
 
 vrec is meant for recording video content that you are entitled to access, for your own personal use.

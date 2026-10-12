@@ -1,0 +1,12 @@
+# Versions known to work together, used as pip constraints by install.bat and CI:
+#   pip install -e . -c requirements-lock.txt
+# Dependabot bumps them once a month in a pull request, and CI tests it before merging.
+comtypes==1.4.17
+greenlet==3.5.3
+obsws-python==1.8.0
+pillow==12.3.0
+playwright==1.63.0
+pyee==13.0.1
+pyvda==0.6.0
+typing_extensions==4.15.0
+websocket-client==1.9.2

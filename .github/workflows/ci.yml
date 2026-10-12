@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" -c requirements-lock.txt
       - run: mypy
 
   build:
@@ -68,7 +68,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - run: pip install ".[build]"
+      - run: pip install ".[build]" -c requirements-lock.txt
       - run: python packaging/build_exe.py
       - name: Smoke-test vrec.exe
         shell: bash
@@ -97,9 +97,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-lock.txt
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
-      - run: python -m pip install -e ".[dev]"
+      - run: python -m pip install -e ".[dev]" -c requirements-lock.txt
       - run: python -m pytest -q --cov --cov-report=term

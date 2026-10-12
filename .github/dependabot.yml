@@ -1,22 +1,21 @@
 version: 2
 
+# Once a month, one pull request per ecosystem. CI tests it; merge it only when green.
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
       actions:
-        update-types:
-          - "minor"
-          - "patch"
+        patterns:
+          - "*"
 
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
       python-dependencies:
-        update-types:
-          - "minor"
-          - "patch"
+        patterns:
+          - "*"

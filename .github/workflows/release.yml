@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
-      - run: python -m pip install -e ".[dev]"
+      - run: python -m pip install -e ".[dev]" -c requirements-lock.txt
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
@@ -67,7 +67,7 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: pip install ".[build]"
+      - run: pip install ".[build]" -c requirements-lock.txt
       - run: python packaging/build_exe.py
 
       - name: Smoke-test vrec.exe
@@ -95,10 +95,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       - uses: actions/download-artifact@v7
         with:
           path: assets
           merge-multiple: true
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" 'index($0, "## [" v "]") == 1 {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
+          fi
 
       - name: Generate SHA256SUMS.txt
         working-directory: assets
@@ -108,4 +121,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "$GITHUB_REF_NAME" assets/* --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" assets/* --title "vrec ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag

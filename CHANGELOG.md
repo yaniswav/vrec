@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-12
+
 ### Added
 
 - `vrec --setup` and `setup.bat`: a first-run wizard, safe to run again. It creates `data\config.toml`
@@ -64,6 +66,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   19:53)`. A longer file is normal (lead-in and tail), and an unreadable length never changes the status.
   The list of videos found on disk also shows each file's length.
 
+### Changed
+
+- `requirements-lock.txt` pins the Python packages known to work together. `install.bat`, CI and
+  the release build install exactly those versions, so a reinstall can't pull in an untested one.
+- Dependabot proposes updates once a month, in one pull request per ecosystem.
+- README: a Maintenance section (what can break, and what to do first).
+
 ### Fixed
 
 - The keyboard controls now work while a video is being prepared, not only during playback. S
@@ -75,7 +84,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.1.0] - 2026-10-01
 
-Initial public release.
+Internal milestone, never published as a release.
 
 ### Added
 
@@ -162,3 +171,7 @@ Initial public release.
 - Command-line interface (`vrec`) with a test mode, configurable data directory and config file, and
   Windows launcher scripts (`install.bat`, `start.bat`, `test.bat`, `launch_chrome.bat`).
 - Documentation: setup guide, virtual display options, and troubleshooting reference.
+
+[Unreleased]: https://github.com/yaniswav/vrec/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/yaniswav/vrec/compare/ea88eb4...v0.2.0
+[0.1.0]: https://github.com/yaniswav/vrec/commit/ea88eb4
